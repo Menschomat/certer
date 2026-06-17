@@ -1,0 +1,9 @@
+# Binaries
+bin/
+
+# Local certificate storage
+certs/
+
+# OS files
+.DS_Store
+*.local
