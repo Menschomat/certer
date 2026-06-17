@@ -34,7 +34,9 @@ jobs:
         uses: hashicorp/vault-action@v3
         with:
           url: ${{ secrets.VAULT_URL }}
-          token: ${{ secrets.VAULT_TOKEN }}
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
           secrets: |
             cert-central/secret/data/registry username | REGISTRY_USERNAME ;
             cert-central/secret/data/registry password | REGISTRY_PASSWORD
