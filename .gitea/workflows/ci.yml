@@ -29,11 +29,33 @@ jobs:
       - name: Build Binaries
         run: make build
 
+      - name: Import Secrets from Vault
+        id: import-secrets
+        uses: hashicorp/vault-action@v3
+        with:
+          url: ${{ secrets.VAULT_URL }}
+          token: ${{ secrets.VAULT_TOKEN }}
+          secrets: |
+            cert-central/secret/data/registry username | REGISTRY_USERNAME ;
+            cert-central/secret/data/registry password | REGISTRY_PASSWORD
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build Docker Image (Multi-Platform)
-        run: make docker-multi
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REGISTRY_URL }}
+          username: ${{ steps.import-secrets.outputs.REGISTRY_USERNAME }}
+          password: ${{ steps.import-secrets.outputs.REGISTRY_PASSWORD }}
+
+      - name: Build and Push Docker Image (Multi-Platform)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ secrets.REGISTRY_URL }}/cert-central:latest
