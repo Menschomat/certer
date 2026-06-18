@@ -175,3 +175,73 @@ func TestLoadConfigEnvDynamicACME(t *testing.T) {
 	})
 }
 
+func TestLoadConfigZeroSSL(t *testing.T) {
+	// Subtest 1: ZeroSSL provider via env var, no ACME URL set
+	t.Run("zerossl_env_var_no_acme_url", func(t *testing.T) {
+		os.Setenv("ACME_PROVIDER", "zerossl")
+		os.Unsetenv("ACME_DIRECTORY_URL")
+		os.Setenv("EAB_KID", "my_kid")
+		os.Setenv("EAB_HMAC", "my_hmac")
+		os.Setenv("CONFIG_PATH", "/nonexistent_config_path_trigger_env_fallback.json")
+		defer os.Unsetenv("ACME_PROVIDER")
+		defer os.Unsetenv("EAB_KID")
+		defer os.Unsetenv("EAB_HMAC")
+		defer os.Unsetenv("CONFIG_PATH")
+
+		cfg := Load()
+		if cfg.ACMEProvider != "zerossl" {
+			t.Errorf("expected provider 'zerossl', got %q", cfg.ACMEProvider)
+		}
+		expectedURL := "https://acme.zerossl.com/v2/DV90"
+		if cfg.ACMEDirectoryURL != expectedURL {
+			t.Errorf("expected ZeroSSL ACME URL %q, got %q", expectedURL, cfg.ACMEDirectoryURL)
+		}
+		if cfg.EABKid != "my_kid" {
+			t.Errorf("expected EABKid 'my_kid', got %q", cfg.EABKid)
+		}
+		if cfg.EABHmac != "my_hmac" {
+			t.Errorf("expected EABHmac 'my_hmac', got %q", cfg.EABHmac)
+		}
+	})
+
+	// Subtest 2: JSON config with provider zerossl
+	t.Run("json_provider_zerossl", func(t *testing.T) {
+		tmpDir, err := os.MkdirTemp("", "config-tests-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		configPath := filepath.Join(tmpDir, "config.json")
+		configJSON := `{
+			"acme_provider": "zerossl",
+			"eab_kid": "json_kid",
+			"eab_hmac": "json_hmac"
+		}`
+
+		err = os.WriteFile(configPath, []byte(configJSON), 0644)
+		if err != nil {
+			t.Fatalf("Failed to write config.json: %v", err)
+		}
+
+		os.Setenv("CONFIG_PATH", configPath)
+		defer os.Unsetenv("CONFIG_PATH")
+
+		cfg := Load()
+		if cfg.ACMEProvider != "zerossl" {
+			t.Errorf("expected provider 'zerossl', got %q", cfg.ACMEProvider)
+		}
+		expectedURL := "https://acme.zerossl.com/v2/DV90"
+		if cfg.ACMEDirectoryURL != expectedURL {
+			t.Errorf("expected ZeroSSL ACME URL %q, got %q", expectedURL, cfg.ACMEDirectoryURL)
+		}
+		if cfg.EABKid != "json_kid" {
+			t.Errorf("expected EABKid 'json_kid', got %q", cfg.EABKid)
+		}
+		if cfg.EABHmac != "json_hmac" {
+			t.Errorf("expected EABHmac 'json_hmac', got %q", cfg.EABHmac)
+		}
+	})
+}
+
+

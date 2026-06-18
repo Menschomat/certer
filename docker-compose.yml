@@ -21,6 +21,10 @@ services:
       # DNS provider credentials passed from .env
       - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN:-}
       - HETZNER_API_KEY=${HETZNER_API_KEY:-}
-      # Environment overrides (optional if defined in config.json)
       - PORT=8080
       - ENV=${ENV:-production}
+      # ACME provider configuration (letsencrypt or zerossl)
+      - ACME_PROVIDER=${ACME_PROVIDER:-letsencrypt}
+      - EAB_KID=${EAB_KID:-}
+      - EAB_HMAC=${EAB_HMAC:-}
+

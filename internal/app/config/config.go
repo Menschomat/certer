@@ -23,7 +23,10 @@ type APIKeyConfig struct {
 type Config struct {
 	Port               string         `json:"port"`
 	Env                string         `json:"env"`
+	ACMEProvider       string         `json:"acme_provider"`
 	ACMEDirectoryURL   string         `json:"acme_directory_url"`
+	EABKid             string         `json:"eab_kid"`
+	EABHmac            string         `json:"eab_hmac"`
 	CertStorageDir     string         `json:"cert_storage_dir"`
 	ChallengePort      string         `json:"challenge_port"`
 	ACMEEmail          string         `json:"acme_email"`
@@ -40,6 +43,7 @@ func Load() *Config {
 	cfg := &Config{
 		Port:               "8080",
 		Env:                "development",
+		ACMEProvider:       "letsencrypt",
 		ACMEDirectoryURL:   "",
 		CertStorageDir:     "./certs",
 		ChallengePort:      "5002",
@@ -61,8 +65,17 @@ func Load() *Config {
 			if jsonCfg.Env != "" {
 				cfg.Env = jsonCfg.Env
 			}
+			if jsonCfg.ACMEProvider != "" {
+				cfg.ACMEProvider = jsonCfg.ACMEProvider
+			}
 			if jsonCfg.ACMEDirectoryURL != "" {
 				cfg.ACMEDirectoryURL = jsonCfg.ACMEDirectoryURL
+			}
+			if jsonCfg.EABKid != "" {
+				cfg.EABKid = jsonCfg.EABKid
+			}
+			if jsonCfg.EABHmac != "" {
+				cfg.EABHmac = jsonCfg.EABHmac
 			}
 			if jsonCfg.CertStorageDir != "" {
 				cfg.CertStorageDir = jsonCfg.CertStorageDir
@@ -99,8 +112,17 @@ func Load() *Config {
 		if envEnv := os.Getenv("ENV"); envEnv != "" {
 			cfg.Env = envEnv
 		}
+		if envProvider := os.Getenv("ACME_PROVIDER"); envProvider != "" {
+			cfg.ACMEProvider = envProvider
+		}
 		if envACME := os.Getenv("ACME_DIRECTORY_URL"); envACME != "" {
 			cfg.ACMEDirectoryURL = envACME
+		}
+		if envEABKid := os.Getenv("EAB_KID"); envEABKid != "" {
+			cfg.EABKid = envEABKid
+		}
+		if envEABHmac := os.Getenv("EAB_HMAC"); envEABHmac != "" {
+			cfg.EABHmac = envEABHmac
 		}
 		if envStorage := os.Getenv("CERT_STORAGE_DIR"); envStorage != "" {
 			cfg.CertStorageDir = envStorage
@@ -127,10 +149,14 @@ func Load() *Config {
 	}
 
 	if cfg.ACMEDirectoryURL == "" {
-		if cfg.Env == "production" {
-			cfg.ACMEDirectoryURL = "https://acme-v02.api.letsencrypt.org/directory"
+		if cfg.ACMEProvider == "zerossl" {
+			cfg.ACMEDirectoryURL = "https://acme.zerossl.com/v2/DV90"
 		} else {
-			cfg.ACMEDirectoryURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
+			if cfg.Env == "production" {
+				cfg.ACMEDirectoryURL = "https://acme-v02.api.letsencrypt.org/directory"
+			} else {
+				cfg.ACMEDirectoryURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
+			}
 		}
 	}
 

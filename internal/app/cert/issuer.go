@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/go-acme/lego/v5/acme"
 	"github.com/go-acme/lego/v5/certificate"
 	"github.com/go-acme/lego/v5/challenge/http01"
 	"github.com/go-acme/lego/v5/lego"
@@ -25,15 +26,21 @@ type Issuer struct {
 	storageDir    string
 	dnsProvider   string // "cloudflare", "hetzner" or "" (defaults to HTTP-01)
 	challengePort string // used if dnsProvider is ""
+	acmeProvider  string // "letsencrypt" or "zerossl"
+	eabKid        string // Key ID for ACME external account binding
+	eabHmac       string // HMAC key for ACME external account binding
 }
 
 // NewIssuer creates a new Issuer instance.
-func NewIssuer(caDirURL, storageDir, dnsProvider, challengePort string) *Issuer {
+func NewIssuer(caDirURL, storageDir, dnsProvider, challengePort, acmeProvider, eabKid, eabHmac string) *Issuer {
 	return &Issuer{
 		caDirURL:      caDirURL,
 		storageDir:    storageDir,
 		dnsProvider:   dnsProvider,
 		challengePort: challengePort,
+		acmeProvider:  acmeProvider,
+		eabKid:        eabKid,
+		eabHmac:       eabHmac,
 	}
 }
 
@@ -99,9 +106,26 @@ func (i *Issuer) Issue(ctx context.Context, email string, domains []string) (*Is
 		}
 	}
 
-	reg, err := client.Registration.Register(ctx, registration.RegisterOptions{TermsOfServiceAgreed: true})
-	if err != nil {
-		return nil, fmt.Errorf("failed to register user: %w", err)
+	var reg *acme.ExtendedAccount
+	if i.eabKid != "" && i.eabHmac != "" {
+		reg, err = client.Registration.RegisterWithExternalAccountBinding(ctx, registration.RegisterEABOptions{
+			TermsOfServiceAgreed: true,
+			Kid:                  i.eabKid,
+			HmacEncoded:          i.eabHmac,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to register user with EAB: %w", err)
+		}
+	} else if i.acmeProvider == "zerossl" {
+		reg, err = registration.RegisterWithZeroSSL(ctx, client.Registration, email)
+		if err != nil {
+			return nil, fmt.Errorf("failed to register user with ZeroSSL: %w", err)
+		}
+	} else {
+		reg, err = client.Registration.Register(ctx, registration.RegisterOptions{TermsOfServiceAgreed: true})
+		if err != nil {
+			return nil, fmt.Errorf("failed to register user: %w", err)
+		}
 	}
 	user.Registration = reg
 
