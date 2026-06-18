@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	"cert-central/internal/app/config"
@@ -89,7 +90,55 @@ func (s *Scheduler) CheckAndRenew(ctx context.Context) error {
 		}
 	}
 
+	s.cleanupUnusedCertificates()
 	return nil
+}
+
+// cleanupUnusedCertificates deletes certificate and key files from the storage directory
+// if they belong to a primary domain that is no longer configured.
+func (s *Scheduler) cleanupUnusedCertificates() {
+	if s.storageDir == "" {
+		return
+	}
+	files, err := os.ReadDir(s.storageDir)
+	if err != nil {
+		slog.Error("Failed to read storage directory for cleanup", "dir", s.storageDir, "error", err)
+		return
+	}
+
+	// Create a map of configured primary domains
+	configured := make(map[string]bool)
+	for _, cc := range s.certificates {
+		if cc.Primary != "" {
+			configured[cc.Primary] = true
+		}
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		name := file.Name()
+		var domain string
+		var isCertOrKey bool
+		if strings.HasSuffix(name, ".crt") {
+			domain = strings.TrimSuffix(name, ".crt")
+			isCertOrKey = true
+		} else if strings.HasSuffix(name, ".key") {
+			domain = strings.TrimSuffix(name, ".key")
+			isCertOrKey = true
+		}
+
+		if isCertOrKey && domain != "" {
+			if !configured[domain] {
+				path := filepath.Join(s.storageDir, name)
+				slog.Info("Cleaning up unused certificate/key file", "file", name, "domain", domain)
+				if err := os.Remove(path); err != nil {
+					slog.Error("Failed to remove unused certificate/key file", "file", name, "error", err)
+				}
+			}
+		}
+	}
 }
 
 // needsRenewal checks if a certificate needs to be renewed and returns the reason.

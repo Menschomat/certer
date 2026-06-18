@@ -140,4 +140,61 @@ func TestScheduler_CheckAndRenew(t *testing.T) {
 			t.Errorf("Expected other.com to be renewed, got %v", mock.CalledDomains[0])
 		}
 	})
+
+	t.Run("Cleanup Unused Certificates", func(t *testing.T) {
+		mock := &MockIssuer{}
+		
+		// Create certificate and key files
+		createTestCertificate(t, tmpDir, "example.com", []string{"*.example.com"}, time.Now().Add(60*24*time.Hour))
+		
+		// Create unused files
+		unusedCertPath := filepath.Join(tmpDir, "unused.com.crt")
+		unusedKeyPath := filepath.Join(tmpDir, "unused.com.key")
+		randomFilePath := filepath.Join(tmpDir, "random.txt")
+		
+		if err := os.WriteFile(unusedCertPath, []byte("mock-cert"), 0600); err != nil {
+			t.Fatalf("failed to create unused cert: %v", err)
+		}
+		if err := os.WriteFile(unusedKeyPath, []byte("mock-key"), 0600); err != nil {
+			t.Fatalf("failed to create unused key: %v", err)
+		}
+		if err := os.WriteFile(randomFilePath, []byte("hello world"), 0600); err != nil {
+			t.Fatalf("failed to create random file: %v", err)
+		}
+
+		// Configure only example.com (excluding unused.com)
+		singleCertConfig := []config.CertConfig{
+			{
+				Primary: "example.com",
+				Sans:    []string{"*.example.com"},
+			},
+		}
+
+		s := NewScheduler(mock, email, singleCertConfig, tmpDir, 30, 24)
+		err := s.CheckAndRenew(context.Background())
+		if err != nil {
+			t.Fatalf("CheckAndRenew failed: %v", err)
+		}
+
+		// example.com files should still exist
+		if _, err := os.Stat(filepath.Join(tmpDir, "example.com.crt")); os.IsNotExist(err) {
+			t.Errorf("example.com.crt should not have been deleted")
+		}
+		if _, err := os.Stat(filepath.Join(tmpDir, "example.com.key")); os.IsNotExist(err) {
+			t.Errorf("example.com.key should not have been deleted")
+		}
+
+		// random.txt should still exist (unrelated extension)
+		if _, err := os.Stat(randomFilePath); os.IsNotExist(err) {
+			t.Errorf("random.txt should not have been deleted")
+		}
+
+		// unused.com files should have been deleted
+		if _, err := os.Stat(unusedCertPath); !os.IsNotExist(err) {
+			t.Errorf("unused.com.crt should have been cleaned up")
+		}
+		if _, err := os.Stat(unusedKeyPath); !os.IsNotExist(err) {
+			t.Errorf("unused.com.key should have been cleaned up")
+		}
+	})
 }
