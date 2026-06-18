@@ -44,6 +44,8 @@ jobs:
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
+        with:
+          image: dockerhub.dmz.k8s.menscho.space/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
