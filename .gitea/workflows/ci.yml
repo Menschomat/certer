@@ -59,5 +59,4 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: registry.dmz.k8s.menscho.space/m0space/cert-central:latest
-          cache-from: type=registry,ref=registry.dmz.k8s.menscho.space/m0space/cert-central:buildcache
-          cache-to: type=registry,ref=registry.dmz.k8s.menscho.space/m0space/cert-central:buildcache,mode=max
+          cache-from: type=registry,ref=registry.dmz.k8s.menscho.space/m0space/cert-central:latest
