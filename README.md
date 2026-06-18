@@ -86,8 +86,8 @@ Provide API credentials for your DNS provider and ACME provider (if using ZeroSS
 # Cloudflare DNS API Token
 export CF_DNS_API_TOKEN="your_cloudflare_token"
 
-# Or Hetzner DNS API Key
-export HETZNER_API_KEY="your_hetzner_api_key"
+# Or Hetzner DNS API Token
+export HETZNER_API_TOKEN="your_hetzner_api_token"
 
 # EAB credentials for ZeroSSL (if applicable)
 export EAB_KID="your_eab_key_id"
