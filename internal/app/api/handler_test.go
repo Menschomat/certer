@@ -1,11 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"cert-central/internal/app/config"
@@ -93,6 +96,12 @@ func TestHandleGetCertificates_Authentication(t *testing.T) {
 	defer ts.Close()
 
 	t.Run("Missing Authorization Header (401)", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&buf, nil))
+		oldLogger := slog.Default()
+		slog.SetDefault(logger)
+		defer slog.SetDefault(oldLogger)
+
 		res, err := http.Get(ts.URL + "/api/v1/certificates")
 		if err != nil {
 			t.Fatalf("Failed request: %v", err)
@@ -102,9 +111,20 @@ func TestHandleGetCertificates_Authentication(t *testing.T) {
 		if res.StatusCode != http.StatusUnauthorized {
 			t.Errorf("Expected 401 Unauthorized, got %v", res.Status)
 		}
+
+		logOutput := buf.String()
+		if !strings.Contains(logOutput, "Unauthorized access attempt: missing token") {
+			t.Errorf("Expected log message containing missing token warning, got: %q", logOutput)
+		}
 	})
 
 	t.Run("Invalid Token (401)", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&buf, nil))
+		oldLogger := slog.Default()
+		slog.SetDefault(logger)
+		defer slog.SetDefault(oldLogger)
+
 		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates", nil)
 		req.Header.Set("Authorization", "Bearer invalidtoken")
 		res, err := http.DefaultClient.Do(req)
@@ -115,6 +135,14 @@ func TestHandleGetCertificates_Authentication(t *testing.T) {
 
 		if res.StatusCode != http.StatusUnauthorized {
 			t.Errorf("Expected 401 Unauthorized, got %v", res.Status)
+		}
+
+		logOutput := buf.String()
+		if !strings.Contains(logOutput, "Unauthorized access attempt: invalid token") {
+			t.Errorf("Expected log message containing invalid token warning, got: %q", logOutput)
+		}
+		if !strings.Contains(logOutput, `"token_prefix":"inval"`) {
+			t.Errorf("Expected log message to contain token prefix 'inval', got: %q", logOutput)
 		}
 	})
 
