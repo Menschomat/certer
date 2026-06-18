@@ -40,7 +40,7 @@ func Load() *Config {
 	cfg := &Config{
 		Port:               "8080",
 		Env:                "development",
-		ACMEDirectoryURL:   "https://acme-staging-v02.api.letsencrypt.org/directory",
+		ACMEDirectoryURL:   "",
 		CertStorageDir:     "./certs",
 		ChallengePort:      "5002",
 		RenewThresholdDays: 30,
@@ -123,6 +123,14 @@ func Load() *Config {
 			if val, err := strconv.Atoi(envCheck); err == nil {
 				cfg.CheckIntervalHours = val
 			}
+		}
+	}
+
+	if cfg.ACMEDirectoryURL == "" {
+		if cfg.Env == "production" {
+			cfg.ACMEDirectoryURL = "https://acme-v02.api.letsencrypt.org/directory"
+		} else {
+			cfg.ACMEDirectoryURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
 		}
 	}
 

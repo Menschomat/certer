@@ -89,3 +89,89 @@ func TestLoadConfig(t *testing.T) {
 		t.Errorf("Expected APIKeys %+v, got %+v", expectedAPIKeys, cfg.APIKeys)
 	}
 }
+
+func TestLoadConfigEnvDynamicACME(t *testing.T) {
+	// Subtest 1: Default environment (development) and no ACME URL set
+	t.Run("default_development_no_acme_url", func(t *testing.T) {
+		os.Unsetenv("ENV")
+		os.Unsetenv("ACME_DIRECTORY_URL")
+		os.Setenv("CONFIG_PATH", "/nonexistent_config_path_trigger_env_fallback.json")
+		defer os.Unsetenv("CONFIG_PATH")
+
+		cfg := Load()
+		if cfg.Env != "development" {
+			t.Errorf("expected default env development, got %q", cfg.Env)
+		}
+		expectedURL := "https://acme-staging-v02.api.letsencrypt.org/directory"
+		if cfg.ACMEDirectoryURL != expectedURL {
+			t.Errorf("expected staging ACME URL %q, got %q", expectedURL, cfg.ACMEDirectoryURL)
+		}
+	})
+
+	// Subtest 2: Production environment set via env var, no ACME URL set
+	t.Run("production_env_var_no_acme_url", func(t *testing.T) {
+		os.Setenv("ENV", "production")
+		os.Unsetenv("ACME_DIRECTORY_URL")
+		os.Setenv("CONFIG_PATH", "/nonexistent_config_path_trigger_env_fallback.json")
+		defer os.Unsetenv("ENV")
+		defer os.Unsetenv("CONFIG_PATH")
+
+		cfg := Load()
+		if cfg.Env != "production" {
+			t.Errorf("expected env production, got %q", cfg.Env)
+		}
+		expectedURL := "https://acme-v02.api.letsencrypt.org/directory"
+		if cfg.ACMEDirectoryURL != expectedURL {
+			t.Errorf("expected production ACME URL %q, got %q", expectedURL, cfg.ACMEDirectoryURL)
+		}
+	})
+
+	// Subtest 3: Production env set but ACME URL explicitly set
+	t.Run("production_env_var_with_explicit_acme_url", func(t *testing.T) {
+		os.Setenv("ENV", "production")
+		os.Setenv("ACME_DIRECTORY_URL", "https://localhost:14000/dir")
+		os.Setenv("CONFIG_PATH", "/nonexistent_config_path_trigger_env_fallback.json")
+		defer os.Unsetenv("ENV")
+		defer os.Unsetenv("ACME_DIRECTORY_URL")
+		defer os.Unsetenv("CONFIG_PATH")
+
+		cfg := Load()
+		if cfg.Env != "production" {
+			t.Errorf("expected env production, got %q", cfg.Env)
+		}
+		expectedURL := "https://localhost:14000/dir"
+		if cfg.ACMEDirectoryURL != expectedURL {
+			t.Errorf("expected custom ACME URL %q, got %q", expectedURL, cfg.ACMEDirectoryURL)
+		}
+	})
+
+	// Subtest 4: JSON config with env production, no acme_directory_url
+	t.Run("json_env_production_no_acme_url", func(t *testing.T) {
+		tmpDir, err := os.MkdirTemp("", "config-tests-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		configPath := filepath.Join(tmpDir, "config.json")
+		configJSON := `{"env": "production"}`
+
+		err = os.WriteFile(configPath, []byte(configJSON), 0644)
+		if err != nil {
+			t.Fatalf("Failed to write config.json: %v", err)
+		}
+
+		os.Setenv("CONFIG_PATH", configPath)
+		defer os.Unsetenv("CONFIG_PATH")
+
+		cfg := Load()
+		if cfg.Env != "production" {
+			t.Errorf("expected env production, got %q", cfg.Env)
+		}
+		expectedURL := "https://acme-v02.api.letsencrypt.org/directory"
+		if cfg.ACMEDirectoryURL != expectedURL {
+			t.Errorf("expected production ACME URL %q, got %q", expectedURL, cfg.ACMEDirectoryURL)
+		}
+	})
+}
+
