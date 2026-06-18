@@ -229,3 +229,57 @@ func TestLoadConfigZeroSSL(t *testing.T) {
 		}
 	})
 }
+
+func TestLoadConfigEnvOverrides(t *testing.T) {
+	configJSON := `{
+		"port": "9090",
+		"env": "development",
+		"acme_email": "json@example.com"
+	}`
+	configPath := createTempConfig(t, configJSON)
+
+	os.Setenv("CONFIG_PATH", configPath)
+	os.Setenv("PORT", "9999")
+	os.Setenv("ENV", "production")
+	os.Setenv("ACME_EMAIL", "env@example.com")
+	os.Setenv("ACME_PROVIDER", "zerossl")
+	os.Setenv("EAB_KID", "env_kid")
+	os.Setenv("EAB_HMAC", "env_hmac")
+	os.Setenv("DNS_PROVIDER", "cloudflare")
+
+	defer func() {
+		os.Unsetenv("CONFIG_PATH")
+		os.Unsetenv("PORT")
+		os.Unsetenv("ENV")
+		os.Unsetenv("ACME_EMAIL")
+		os.Unsetenv("ACME_PROVIDER")
+		os.Unsetenv("EAB_KID")
+		os.Unsetenv("EAB_HMAC")
+		os.Unsetenv("DNS_PROVIDER")
+	}()
+
+	cfg := Load()
+
+	if cfg.Port != "9999" {
+		t.Errorf("Expected Port '9999' from env override, got %q", cfg.Port)
+	}
+	if cfg.Env != "production" {
+		t.Errorf("Expected Env 'production' from env override, got %q", cfg.Env)
+	}
+	if cfg.ACMEEmail != "env@example.com" {
+		t.Errorf("Expected ACMEEmail 'env@example.com' from env override, got %q", cfg.ACMEEmail)
+	}
+	if cfg.ACMEProvider != "zerossl" {
+		t.Errorf("Expected ACMEProvider 'zerossl' from env override, got %q", cfg.ACMEProvider)
+	}
+	if cfg.EABKid != "env_kid" {
+		t.Errorf("Expected EABKid 'env_kid' from env override, got %q", cfg.EABKid)
+	}
+	if cfg.EABHmac != "env_hmac" {
+		t.Errorf("Expected EABHmac 'env_hmac' from env override, got %q", cfg.EABHmac)
+	}
+	if cfg.DNSProvider != "cloudflare" {
+		t.Errorf("Expected DNSProvider 'cloudflare' from env override, got %q", cfg.DNSProvider)
+	}
+}
+

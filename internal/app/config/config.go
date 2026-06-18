@@ -104,49 +104,50 @@ func Load() *Config {
 		} else {
 			slog.Error("Failed to unmarshal config JSON", "path", configPath, "error", err)
 		}
-	} else {
-		// Fallback to environment variables
-		if envPort := os.Getenv("PORT"); envPort != "" {
-			cfg.Port = envPort
-		}
-		if envEnv := os.Getenv("ENV"); envEnv != "" {
-			cfg.Env = envEnv
-		}
-		if envProvider := os.Getenv("ACME_PROVIDER"); envProvider != "" {
-			cfg.ACMEProvider = envProvider
-		}
-		if envACME := os.Getenv("ACME_DIRECTORY_URL"); envACME != "" {
-			cfg.ACMEDirectoryURL = envACME
-		}
-		if envEABKid := os.Getenv("EAB_KID"); envEABKid != "" {
-			cfg.EABKid = envEABKid
-		}
-		if envEABHmac := os.Getenv("EAB_HMAC"); envEABHmac != "" {
-			cfg.EABHmac = envEABHmac
-		}
-		if envStorage := os.Getenv("CERT_STORAGE_DIR"); envStorage != "" {
-			cfg.CertStorageDir = envStorage
-		}
-		if envChallenge := os.Getenv("CHALLENGE_PORT"); envChallenge != "" {
-			cfg.ChallengePort = envChallenge
-		}
-		if envEmail := os.Getenv("ACME_EMAIL"); envEmail != "" {
-			cfg.ACMEEmail = envEmail
-		}
-		if envDNS := os.Getenv("DNS_PROVIDER"); envDNS != "" {
-			cfg.DNSProvider = envDNS
-		}
-		if envRenew := os.Getenv("RENEW_THRESHOLD_DAYS"); envRenew != "" {
-			if val, err := strconv.Atoi(envRenew); err == nil {
-				cfg.RenewThresholdDays = val
-			}
-		}
-		if envCheck := os.Getenv("CHECK_INTERVAL_HOURS"); envCheck != "" {
-			if val, err := strconv.Atoi(envCheck); err == nil {
-				cfg.CheckIntervalHours = val
-			}
+	}
+
+	// Environment variables always override JSON/Defaults
+	if envPort := os.Getenv("PORT"); envPort != "" {
+		cfg.Port = envPort
+	}
+	if envEnv := os.Getenv("ENV"); envEnv != "" {
+		cfg.Env = envEnv
+	}
+	if envProvider := os.Getenv("ACME_PROVIDER"); envProvider != "" {
+		cfg.ACMEProvider = envProvider
+	}
+	if envACME := os.Getenv("ACME_DIRECTORY_URL"); envACME != "" {
+		cfg.ACMEDirectoryURL = envACME
+	}
+	if envEABKid := os.Getenv("EAB_KID"); envEABKid != "" {
+		cfg.EABKid = envEABKid
+	}
+	if envEABHmac := os.Getenv("EAB_HMAC"); envEABHmac != "" {
+		cfg.EABHmac = envEABHmac
+	}
+	if envStorage := os.Getenv("CERT_STORAGE_DIR"); envStorage != "" {
+		cfg.CertStorageDir = envStorage
+	}
+	if envChallenge := os.Getenv("CHALLENGE_PORT"); envChallenge != "" {
+		cfg.ChallengePort = envChallenge
+	}
+	if envEmail := os.Getenv("ACME_EMAIL"); envEmail != "" {
+		cfg.ACMEEmail = envEmail
+	}
+	if envDNS := os.Getenv("DNS_PROVIDER"); envDNS != "" {
+		cfg.DNSProvider = envDNS
+	}
+	if envRenew := os.Getenv("RENEW_THRESHOLD_DAYS"); envRenew != "" {
+		if val, err := strconv.Atoi(envRenew); err == nil {
+			cfg.RenewThresholdDays = val
 		}
 	}
+	if envCheck := os.Getenv("CHECK_INTERVAL_HOURS"); envCheck != "" {
+		if val, err := strconv.Atoi(envCheck); err == nil {
+			cfg.CheckIntervalHours = val
+		}
+	}
+
 
 	if cfg.ACMEDirectoryURL == "" {
 		if cfg.ACMEProvider == "zerossl" {
