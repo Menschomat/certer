@@ -7,3 +7,4 @@ certs/
 # OS files
 .DS_Store
 *.local
+.env
