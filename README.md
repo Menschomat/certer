@@ -8,16 +8,36 @@ Production-grade, automated SSL/TLS certificate management service in Go. Integr
 
 ```mermaid
 graph TD
-    A[config.json] -->|Loads Config| B(Main App)
-    B -->|Starts| C(Background Scheduler)
-    B -->|Starts| D(API Server)
-    C -->|Check Expiry/Config| E{Certs Valid?}
-    E -->|No / Expired / Config Changed| F(Lego ACME Client)
-    F -->|DNS-01 Challenge| G(Hetzner / Cloudflare)
-    G -->|Issue PEMs| H[./certs Storage]
-    E -->|Yes| I(No Action)
-    D -->|GET /api/v1/certificates| J(Bearer Token Auth)
-    J -->|Argon2id Match| K(Filter Certs & Return JSON)
+    subgraph Config
+        JSON[config.json]
+        Env[Environment Variables]
+    end
+
+    subgraph Service["Bootstrap (Main Startup)"]
+        Startup[Main Bootstrapper]
+        JSON --> Startup
+        Env --> Startup
+    end
+
+    subgraph BackgroundWorker["Background Worker"]
+        Sched[cert.Scheduler] -->|Examine Expiry / Config Changes| Issuer[cert.Issuer]
+        Issuer -->|DNS-01 / HTTP-01 Challenge| ACME[ACME CA Server]
+    end
+
+    subgraph WebServer["API Web Server"]
+        API[api.Server] -->|GET /api/v1/certificates| Auth{Argon2id Auth}
+        Auth -->|Authorized| Filter[Filter & Return Certificates]
+    end
+
+    subgraph Storage["Certificate Storage"]
+        Certs[./certs/*.crt, *.key]
+    end
+
+    Startup -->|Spawns| Sched
+    Startup -->|Starts| API
+    
+    ACME -->|Writes PEMs| Certs
+    Filter -->|Reads PEMs| Certs
 ```
 
 ---
@@ -43,12 +63,18 @@ Copy the template configuration file:
 ```bash
 cp example.config.json config.json
 ```
-Note that `acme_directory_url` is optional, as the service dynamically defaults to Let's Encrypt Staging/Production or ZeroSSL based on your `acme_provider` and `ENV` settings.
 
 ```json
 {
-  "acme_email": "admin@example.com",
+  "port": "8080",
+  "env": "development",
   "acme_provider": "letsencrypt",
+  "acme_directory_url": "",
+  "acme_email": "admin@example.com",
+  "eab_kid": "",
+  "eab_hmac": "",
+  "cert_storage_dir": "./certs",
+  "challenge_port": "5002",
   "dns_provider": "cloudflare",
   "dns_resolvers": [
     "1.1.1.1:53",
@@ -70,6 +96,26 @@ Note that `acme_directory_url` is optional, as the service dynamically defaults 
   ]
 }
 ```
+
+#### Configuration Options
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `port` | string | `"8080"` | Port for the HTTP API server |
+| `env` | string | `"development"` | Service environment (`development` or `production`) |
+| `acme_provider` | string | `"letsencrypt"` | ACME provider (`letsencrypt` or `zerossl`) |
+| `acme_directory_url` | string | *(dynamic)* | Directory URL of the ACME CA server |
+| `acme_email` | string | *None* | Email address registered with the ACME provider |
+| `eab_kid` | string | *None* | Key ID for External Account Binding (EAB) |
+| `eab_hmac` | string | *None* | HMAC key for External Account Binding (EAB) |
+| `cert_storage_dir` | string | `"./certs"` | Directory where certificates and keys are persisted |
+| `challenge_port` | string | `"5002"` | HTTP port for the HTTP-01 challenge solver |
+| `dns_provider` | string | *None* | DNS provider (`cloudflare`, `hetzner`, or blank for HTTP-01 fallback) |
+| `dns_resolvers` | list | *None* | DNS resolvers to verify DNS-01 propagation |
+| `renew_threshold_days` | int | `30` | Days before expiry to trigger automatic renewal |
+| `check_interval_hours` | int | `24` | Hours between checking local certificate status |
+| `certificates` | list | *None* | Target certificates (primary domain and SANs) |
+| `api_keys` | list | *None* | Authorized API keys (Argon2id hashes) and allowed domains |
 
 ### ACME Provider Configuration
 
