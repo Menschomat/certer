@@ -97,7 +97,11 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 		}
 
 		if !authorized {
-			slog.Warn("Unauthorized access attempt: invalid token", "remote_addr", r.RemoteAddr, "path", r.URL.Path)
+			tokenPrefix := token
+			if len(token) > 5 {
+				tokenPrefix = token[:5]
+			}
+			slog.Warn("Unauthorized access attempt: invalid token", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "token_prefix", tokenPrefix)
 			respondWithError(w, http.StatusUnauthorized, "invalid authorization token")
 			return
 		}
