@@ -51,7 +51,7 @@ jobs:
       - name: Log in to Container Registry
         uses: docker/login-action@v4
         with:
-          registry: ${{ secrets.REGISTRY_URL }}
+          registry: registry.dmz.k8s.menscho.space
           username: ${{ steps.import-secrets.outputs.REGISTRY_USERNAME }}
           password: ${{ steps.import-secrets.outputs.REGISTRY_PASSWORD }}
 
@@ -61,4 +61,4 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ secrets.REGISTRY_URL }}/cert-central:latest
+          tags: registry.dmz.k8s.menscho.space/m0space/cert-central:latest
