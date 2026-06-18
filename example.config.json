@@ -1,4 +1,10 @@
 {
+  "acme_email": "admin@example.com",
+  "dns_provider": "cloudflare",
+  "dns_resolvers": [
+    "1.1.1.1:53",
+    "8.8.8.8:53"
+  ],
   "certificates": [
     {
       "primary": "example.com",

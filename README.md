@@ -50,6 +50,10 @@ Note that `acme_directory_url` is optional, as the service dynamically defaults 
   "acme_email": "admin@example.com",
   "acme_provider": "letsencrypt",
   "dns_provider": "cloudflare",
+  "dns_resolvers": [
+    "1.1.1.1:53",
+    "8.8.8.8:53"
+  ],
   "renew_threshold_days": 30,
   "check_interval_hours": 24,
   "certificates": [
@@ -80,13 +84,20 @@ ZeroSSL can be configured in two ways:
 - **Manual EAB Credentials:** If you prefer to bind to a pre-existing ZeroSSL developer account, provide your EAB credentials via configuration (`eab_kid` / `eab_hmac`) or environment variables (`EAB_KID` / `EAB_HMAC`).
 
 
-### Authentication Environment Variables
-Provide API credentials for your DNS provider and ACME provider (if using ZeroSSL) as environment variables:
+### Environment Variables Configuration
+Provide configuration parameters, custom resolvers, and API credentials for your DNS and ACME providers as environment variables:
 ```bash
-# Cloudflare DNS API Token
+# DNS Solver Configuration
+# Choose challenge solver: cloudflare, hetzner, or leave blank to fall back to HTTP-01
+export DNS_PROVIDER="cloudflare"
+
+# Optional comma-separated list of custom recursive DNS resolvers (e.g. to bypass local DNS caching or local resolution issues)
+export DNS_RESOLVERS="1.1.1.1:53,8.8.8.8:53"
+
+# Cloudflare DNS API Token (required if DNS_PROVIDER is cloudflare)
 export CF_DNS_API_TOKEN="your_cloudflare_token"
 
-# Or Hetzner DNS API Token
+# Or Hetzner DNS API Token (required if DNS_PROVIDER is hetzner)
 export HETZNER_API_TOKEN="your_hetzner_api_token"
 
 # EAB credentials for ZeroSSL (if applicable)

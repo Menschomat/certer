@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-acme/lego/v5/acme"
+	"github.com/go-acme/lego/v5/certcrypto"
 	"github.com/go-acme/lego/v5/certificate"
 	"github.com/go-acme/lego/v5/challenge"
 	"github.com/go-acme/lego/v5/challenge/dns01"
@@ -145,6 +146,7 @@ func (i *Issuer) Issue(ctx context.Context, email string, domains []string) (*Is
 	request := certificate.ObtainRequest{
 		Domains: domains,
 		Bundle:  true,
+		KeyType: certcrypto.EC256,
 	}
 	resource, err := client.Certificate.Obtain(ctx, request)
 	if err != nil {
