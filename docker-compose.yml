@@ -1,0 +1,26 @@
+services:
+  cert-central:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cert-central
+    restart: unless-stopped
+    ports:
+      - "8080:8080" # REST API
+      - "5002:5002" # HTTP-01 ACME Challenge Port (if not using DNS-01)
+    volumes:
+      # Mount configuration file
+      - ./config.json:/config.json:ro
+      # Persist issued SSL/TLS certificates and keys
+      - ./certs:/certs
+    environment:
+      # Point to the mounted configuration file
+      - CONFIG_PATH=/config.json
+      # Define certificate storage directory mapping to the mounted volume
+      - CERT_STORAGE_DIR=/certs
+      # DNS provider credentials passed from .env
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN:-}
+      - HETZNER_API_KEY=${HETZNER_API_KEY:-}
+      # Environment overrides (optional if defined in config.json)
+      - PORT=8080
+      - ENV=${ENV:-production}
