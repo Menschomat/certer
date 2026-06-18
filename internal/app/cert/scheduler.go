@@ -70,42 +70,10 @@ func (s *Scheduler) CheckAndRenew(ctx context.Context) error {
 		}
 
 		domains := append([]string{cc.Primary}, cc.Sans...)
-		certPath := filepath.Join(s.storageDir, cc.Primary+".crt")
-
-		reason := ""
-		data, err := os.ReadFile(certPath)
+		reason, err := s.needsRenewal(cc, domains)
 		if err != nil {
-			reason = "certificate file missing or unreadable"
-		} else {
-			block, _ := pem.Decode(data)
-			if block == nil {
-				reason = "failed to decode certificate PEM"
-			} else {
-				cert, err := x509.ParseCertificate(block.Bytes)
-				if err != nil {
-					reason = "failed to parse certificate bytes"
-				} else {
-					// 1. Check expiration
-					threshold := time.Duration(s.renewThresholdDays) * 24 * time.Hour
-					timeToExpiry := time.Until(cert.NotAfter)
-					if timeToExpiry < threshold {
-						reason = fmt.Sprintf("certificate is expiring soon (expires in %v, threshold %v)", timeToExpiry, threshold)
-					} else {
-						// 2. Check configuration changes (compare cert DNSNames vs configured domains)
-						certDomains := make([]string, len(cert.DNSNames))
-						copy(certDomains, cert.DNSNames)
-						sort.Strings(certDomains)
-
-						configDomains := make([]string, len(domains))
-						copy(configDomains, domains)
-						sort.Strings(configDomains)
-
-						if !reflect.DeepEqual(certDomains, configDomains) {
-							reason = fmt.Sprintf("domains configuration changed (cert: %v, config: %v)", certDomains, configDomains)
-						}
-					}
-				}
-			}
+			slog.Error("Failed to check certificate status", "primary_domain", cc.Primary, "error", err)
+			continue
 		}
 
 		if reason != "" {
@@ -122,4 +90,45 @@ func (s *Scheduler) CheckAndRenew(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// needsRenewal checks if a certificate needs to be renewed and returns the reason.
+func (s *Scheduler) needsRenewal(cc config.CertConfig, domains []string) (string, error) {
+	certPath := filepath.Join(s.storageDir, cc.Primary+".crt")
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return "certificate file missing or unreadable", nil
+	}
+
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return "failed to decode certificate PEM", nil
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return "failed to parse certificate bytes", nil
+	}
+
+	// 1. Check expiration
+	threshold := time.Duration(s.renewThresholdDays) * 24 * time.Hour
+	timeToExpiry := time.Until(cert.NotAfter)
+	if timeToExpiry < threshold {
+		return fmt.Sprintf("certificate is expiring soon (expires in %v, threshold %v)", timeToExpiry, threshold), nil
+	}
+
+	// 2. Check configuration changes (compare cert DNSNames vs configured domains)
+	certDomains := make([]string, len(cert.DNSNames))
+	copy(certDomains, cert.DNSNames)
+	sort.Strings(certDomains)
+
+	configDomains := make([]string, len(domains))
+	copy(configDomains, domains)
+	sort.Strings(configDomains)
+
+	if !reflect.DeepEqual(certDomains, configDomains) {
+		return fmt.Sprintf("domains configuration changed (cert: %v, config: %v)", certDomains, configDomains), nil
+	}
+
+	return "", nil
 }

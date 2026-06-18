@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -9,6 +10,10 @@ import (
 
 	"cert-central/internal/app/config"
 )
+
+type contextKey string
+
+const allowedDomainsKey contextKey = "allowed_domains"
 
 // Server handles API routes and dependencies.
 type Server struct {
@@ -32,7 +37,7 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /api/v1/hello", s.handleHello)
-	mux.HandleFunc("GET /api/v1/certificates", s.handleGetCertificates)
+	mux.Handle("GET /api/v1/certificates", s.Authenticate(http.HandlerFunc(s.handleGetCertificates)))
 
 	return mux
 }
@@ -51,39 +56,59 @@ type CertificateResponse struct {
 	PrivateKey  string   `json:"private_key,omitempty"`
 }
 
-func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
-	// Parse Bearer Token
-	authHeader := r.Header.Get("Authorization")
-	token := ""
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		token = strings.TrimPrefix(authHeader, "Bearer ")
-	} else {
-		token = authHeader
-	}
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(payload)
+}
 
-	if token == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"missing authorization token"}`))
-		return
-	}
+func respondWithError(w http.ResponseWriter, code int, message string) {
+	respondWithJSON(w, code, map[string]string{"error": message})
+}
 
-	var allowedDomains []string
-	authorized := false
-	for _, key := range s.apiKeys {
-		if key.Token != "" {
-			if match, err := VerifyToken(token, key.Token); err == nil && match {
-				allowedDomains = key.AllowedDomains
-				authorized = true
-				break
+// Authenticate is a middleware that validates Bearer token authentication
+// and injects allowed domains into the request context.
+func (s *Server) Authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		token := ""
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+		} else {
+			token = authHeader
+		}
+
+		if token == "" {
+			respondWithError(w, http.StatusUnauthorized, "missing authorization token")
+			return
+		}
+
+		var allowedDomains []string
+		authorized := false
+		for _, key := range s.apiKeys {
+			if key.Token != "" {
+				if match, err := VerifyToken(token, key.Token); err == nil && match {
+					allowedDomains = key.AllowedDomains
+					authorized = true
+					break
+				}
 			}
 		}
-	}
 
-	if !authorized {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"invalid authorization token"}`))
+		if !authorized {
+			respondWithError(w, http.StatusUnauthorized, "invalid authorization token")
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), allowedDomainsKey, allowedDomains)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
+	allowedDomains, ok := r.Context().Value(allowedDomainsKey).([]string)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "failed to parse authorization context")
 		return
 	}
 
@@ -121,9 +146,7 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 		respList = append(respList, resp)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(respList)
+	respondWithJSON(w, http.StatusOK, respList)
 }
 
 func isDomainAllowed(domain string, allowed []string) bool {
@@ -136,10 +159,7 @@ func isDomainAllowed(domain string, allowed []string) bool {
 }
 
 func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
-	resp := HelloResponse{Message: "Hello, World!"}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	respondWithJSON(w, http.StatusOK, HelloResponse{Message: "Hello, World!"})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
