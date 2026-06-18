@@ -158,16 +158,18 @@ func Load() *Config {
 
 
 	if cfg.ACMEDirectoryURL == "" {
-		if cfg.ACMEProvider == "zerossl" {
-			cfg.ACMEDirectoryURL = "https://acme.zerossl.com/v2/DV90"
-		} else {
-			if cfg.Env == "production" {
-				cfg.ACMEDirectoryURL = "https://acme-v02.api.letsencrypt.org/directory"
-			} else {
-				cfg.ACMEDirectoryURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
-			}
-		}
+		cfg.ACMEDirectoryURL = defaultACMEURL(cfg.ACMEProvider, cfg.Env)
 	}
 
 	return cfg
+}
+
+func defaultACMEURL(provider, env string) string {
+	if provider == "zerossl" {
+		return "https://acme.zerossl.com/v2/DV90"
+	}
+	if env == "production" {
+		return "https://acme-v02.api.letsencrypt.org/directory"
+	}
+	return "https://acme-staging-v02.api.letsencrypt.org/directory"
 }

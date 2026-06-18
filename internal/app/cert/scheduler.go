@@ -85,9 +85,10 @@ func (s *Scheduler) CheckAndRenew(ctx context.Context) error {
 				continue
 			}
 			slog.Info("Certificate issued and saved successfully", "domain", result.Domain)
-		} else {
-			slog.Info("Certificate is valid and configuration matches. No action required.", "domain", cc.Primary)
+			continue
 		}
+
+		slog.Info("Certificate is valid and configuration matches. No action required.", "domain", cc.Primary)
 	}
 
 	s.cleanupUnusedCertificates()
@@ -121,11 +122,9 @@ func (s *Scheduler) cleanupUnusedCertificates() {
 		name := file.Name()
 		var domain string
 		var isCertOrKey bool
-		if strings.HasSuffix(name, ".crt") {
-			domain = strings.TrimSuffix(name, ".crt")
-			isCertOrKey = true
-		} else if strings.HasSuffix(name, ".key") {
-			domain = strings.TrimSuffix(name, ".key")
+		ext := filepath.Ext(name)
+		if ext == ".crt" || ext == ".key" {
+			domain = strings.TrimSuffix(name, ext)
 			isCertOrKey = true
 		}
 
@@ -167,17 +166,24 @@ func (s *Scheduler) needsRenewal(cc config.CertConfig, domains []string) (string
 	}
 
 	// 2. Check configuration changes (compare cert DNSNames vs configured domains)
-	certDomains := make([]string, len(cert.DNSNames))
-	copy(certDomains, cert.DNSNames)
-	sort.Strings(certDomains)
-
-	configDomains := make([]string, len(domains))
-	copy(configDomains, domains)
-	sort.Strings(configDomains)
-
-	if !reflect.DeepEqual(certDomains, configDomains) {
-		return fmt.Sprintf("domains configuration changed (cert: %v, config: %v)", certDomains, configDomains), nil
+	if !domainsMatch(cert.DNSNames, domains) {
+		return fmt.Sprintf("domains configuration changed (cert: %v, config: %v)", cert.DNSNames, domains), nil
 	}
 
 	return "", nil
+}
+
+func domainsMatch(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	ac := make([]string, len(a))
+	copy(ac, a)
+	sort.Strings(ac)
+
+	bc := make([]string, len(b))
+	copy(bc, b)
+	sort.Strings(bc)
+
+	return reflect.DeepEqual(ac, bc)
 }

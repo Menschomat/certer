@@ -89,57 +89,14 @@ func (i *Issuer) Issue(ctx context.Context, email string, domains []string) (*Is
 	}
 
 	// Setup DNS-01 or HTTP-01 challenge provider
-	switch i.dnsProvider {
-	case "cloudflare":
-		provider, err := cloudflare.NewDNSProvider()
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize cloudflare provider: %w", err)
-		}
-		err = client.Challenge.SetDNS01Provider(&syncProvider{provider: provider})
-		if err != nil {
-			return nil, fmt.Errorf("failed to set cloudflare dns challenge: %w", err)
-		}
-	case "hetzner":
-		provider, err := hetzner.NewDNSProvider()
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize hetzner provider: %w", err)
-		}
-		err = client.Challenge.SetDNS01Provider(&syncProvider{provider: provider})
-		if err != nil {
-			return nil, fmt.Errorf("failed to set hetzner dns challenge: %w", err)
-		}
-	default:
-		// Fallback to HTTP-01
-		port := i.challengePort
-		if port == "" {
-			port = "5002"
-		}
-		err = client.Challenge.SetHTTP01Provider(http01.NewProviderServer("", port))
-		if err != nil {
-			return nil, fmt.Errorf("failed to set http-01 challenge: %w", err)
-		}
+	if err := i.setupChallengeProvider(client); err != nil {
+		return nil, err
 	}
 
-	var reg *acme.ExtendedAccount
-	if i.eabKid != "" && i.eabHmac != "" {
-		reg, err = client.Registration.RegisterWithExternalAccountBinding(ctx, registration.RegisterEABOptions{
-			TermsOfServiceAgreed: true,
-			Kid:                  i.eabKid,
-			HmacEncoded:          i.eabHmac,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to register user with EAB: %w", err)
-		}
-	} else if i.acmeProvider == "zerossl" {
-		reg, err = registration.RegisterWithZeroSSL(ctx, client.Registration, email)
-		if err != nil {
-			return nil, fmt.Errorf("failed to register user with ZeroSSL: %w", err)
-		}
-	} else {
-		reg, err = client.Registration.Register(ctx, registration.RegisterOptions{TermsOfServiceAgreed: true})
-		if err != nil {
-			return nil, fmt.Errorf("failed to register user: %w", err)
-		}
+	// Register ACME account
+	reg, err := i.registerUser(ctx, client, email)
+	if err != nil {
+		return nil, err
 	}
 	user.Registration = reg
 
@@ -168,6 +125,68 @@ func (i *Issuer) Issue(ctx context.Context, email string, domains []string) (*Is
 		Certificate:       resource.Certificate,
 		IssuerCertificate: resource.IssuerCertificate,
 	}, nil
+}
+
+func (i *Issuer) setupChallengeProvider(client *lego.Client) error {
+	switch i.dnsProvider {
+	case "cloudflare":
+		provider, err := cloudflare.NewDNSProvider()
+		if err != nil {
+			return fmt.Errorf("failed to initialize cloudflare provider: %w", err)
+		}
+		err = client.Challenge.SetDNS01Provider(&syncProvider{provider: provider})
+		if err != nil {
+			return fmt.Errorf("failed to set cloudflare dns challenge: %w", err)
+		}
+	case "hetzner":
+		provider, err := hetzner.NewDNSProvider()
+		if err != nil {
+			return fmt.Errorf("failed to initialize hetzner provider: %w", err)
+		}
+		err = client.Challenge.SetDNS01Provider(&syncProvider{provider: provider})
+		if err != nil {
+			return fmt.Errorf("failed to set hetzner dns challenge: %w", err)
+		}
+	default:
+		// Fallback to HTTP-01
+		port := i.challengePort
+		if port == "" {
+			port = "5002"
+		}
+		err := client.Challenge.SetHTTP01Provider(http01.NewProviderServer("", port))
+		if err != nil {
+			return fmt.Errorf("failed to set http-01 challenge: %w", err)
+		}
+	}
+	return nil
+}
+
+func (i *Issuer) registerUser(ctx context.Context, client *lego.Client, email string) (*acme.ExtendedAccount, error) {
+	if i.eabKid != "" && i.eabHmac != "" {
+		reg, err := client.Registration.RegisterWithExternalAccountBinding(ctx, registration.RegisterEABOptions{
+			TermsOfServiceAgreed: true,
+			Kid:                  i.eabKid,
+			HmacEncoded:          i.eabHmac,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to register user with EAB: %w", err)
+		}
+		return reg, nil
+	}
+
+	if i.acmeProvider == "zerossl" {
+		reg, err := registration.RegisterWithZeroSSL(ctx, client.Registration, email)
+		if err != nil {
+			return nil, fmt.Errorf("failed to register user with ZeroSSL: %w", err)
+		}
+		return reg, nil
+	}
+
+	reg, err := client.Registration.Register(ctx, registration.RegisterOptions{TermsOfServiceAgreed: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to register user: %w", err)
+	}
+	return reg, nil
 }
 
 func (i *Issuer) saveCertificates(domain string, resource *certificate.Resource) error {

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -61,7 +62,9 @@ type CertificateResponse struct {
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(payload)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		slog.Error("Failed to encode JSON response", "error", err)
+	}
 }
 
 func respondWithError(w http.ResponseWriter, code int, message string) {
@@ -73,12 +76,7 @@ func respondWithError(w http.ResponseWriter, code int, message string) {
 func (s *Server) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
-		token := ""
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			token = strings.TrimPrefix(authHeader, "Bearer ")
-		} else {
-			token = authHeader
-		}
+		token := strings.TrimPrefix(authHeader, "Bearer ")
 
 		if token == "" {
 			respondWithError(w, http.StatusUnauthorized, "missing authorization token")
@@ -137,14 +135,12 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 			KeyFilename:  cc.Primary + ".key",
 		}
 
-		certBytes, err := os.ReadFile(certPath)
-		if err == nil {
+		if certBytes, err := os.ReadFile(certPath); err == nil {
 			resp.Certificate = string(certBytes)
-			keyBytes, err := os.ReadFile(keyPath)
-			if err == nil {
-				resp.PrivateKey = string(keyBytes)
-				resp.Issued = true
-			}
+		}
+		if keyBytes, err := os.ReadFile(keyPath); err == nil && resp.Certificate != "" {
+			resp.PrivateKey = string(keyBytes)
+			resp.Issued = true
 		}
 
 		respList = append(respList, resp)
