@@ -71,11 +71,10 @@ By default, the service uses Let's Encrypt. The directory URL is automatically t
 - **`ENV=production`**: Defaults to Let's Encrypt Production (`https://acme-v02.api.letsencrypt.org/directory`).
 
 #### 2. ZeroSSL
-ZeroSSL requires External Account Binding (EAB) credentials. You can generate these credentials by logging into your ZeroSSL Developer Dashboard.
+ZeroSSL can be configured in two ways:
+- **Email-only Registration (Recommended):** Set `"acme_provider": "zerossl"` in your `config.json` (or environment variable `ACME_PROVIDER=zerossl`). The client will automatically contact ZeroSSL's API and generate/bind EAB credentials under the hood using your ACME email address.
+- **Manual EAB Credentials:** If you prefer to bind to a pre-existing ZeroSSL developer account, provide your EAB credentials via configuration (`eab_kid` / `eab_hmac`) or environment variables (`EAB_KID` / `EAB_HMAC`).
 
-To use ZeroSSL:
-- Set `"acme_provider": "zerossl"` in your `config.json` (or environment variable `ACME_PROVIDER=zerossl`). The directory URL will default to the ZeroSSL endpoint (`https://acme.zerossl.com/v2/DV90`).
-- Provide EAB credentials via configuration (`eab_kid` / `eab_hmac`) or environment variables (`EAB_KID` / `EAB_HMAC`).
 
 ### Authentication Environment Variables
 Provide API credentials for your DNS provider and ACME provider (if using ZeroSSL) as environment variables:
