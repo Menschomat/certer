@@ -39,7 +39,11 @@ graph TD
 - Make (optional)
 
 ### Setup Configuration
-Create a `config.json` file in the project root. Note that `acme_directory_url` is optional, as the service dynamically defaults to Let's Encrypt Staging/Production or ZeroSSL based on your `acme_provider` and `ENV` settings.
+Copy the template configuration file:
+```bash
+cp example.config.json config.json
+```
+Note that `acme_directory_url` is optional, as the service dynamically defaults to Let's Encrypt Staging/Production or ZeroSSL based on your `acme_provider` and `ENV` settings.
 
 ```json
 {
