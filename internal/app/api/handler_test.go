@@ -146,6 +146,14 @@ func TestHandleGetCertificates_Authentication(t *testing.T) {
 			if certItem.Domain == "bly.li" {
 				t.Error("Unauthorized domain 'bly.li' returned in response!")
 			}
+			expectedCertFilename := certItem.Domain + ".crt"
+			expectedKeyFilename := certItem.Domain + ".key"
+			if certItem.CertFilename != expectedCertFilename {
+				t.Errorf("Expected CertFilename %q, got %q", expectedCertFilename, certItem.CertFilename)
+			}
+			if certItem.KeyFilename != expectedKeyFilename {
+				t.Errorf("Expected KeyFilename %q, got %q", expectedKeyFilename, certItem.KeyFilename)
+			}
 		}
 
 		if !domainsFound["menscho.space"] || !domainsFound["weihrauchphoto.de"] {

@@ -49,11 +49,13 @@ type HelloResponse struct {
 
 // CertificateResponse represents the JSON schema for sharing certificates.
 type CertificateResponse struct {
-	Domain      string   `json:"domain"`
-	Sans        []string `json:"sans"`
-	Issued      bool     `json:"issued"`
-	Certificate string   `json:"certificate,omitempty"`
-	PrivateKey  string   `json:"private_key,omitempty"`
+	Domain       string   `json:"domain"`
+	Sans         []string `json:"sans"`
+	Issued       bool     `json:"issued"`
+	Certificate  string   `json:"certificate,omitempty"`
+	PrivateKey   string   `json:"private_key,omitempty"`
+	CertFilename string   `json:"cert_filename,omitempty"`
+	KeyFilename  string   `json:"key_filename,omitempty"`
 }
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
@@ -128,9 +130,11 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 		keyPath := filepath.Join(s.storageDir, cc.Primary+".key")
 
 		resp := CertificateResponse{
-			Domain: cc.Primary,
-			Sans:   cc.Sans,
-			Issued: false,
+			Domain:       cc.Primary,
+			Sans:         cc.Sans,
+			Issued:       false,
+			CertFilename: cc.Primary + ".crt",
+			KeyFilename:  cc.Primary + ".key",
 		}
 
 		certBytes, err := os.ReadFile(certPath)

@@ -174,7 +174,9 @@ Retrieve PEM-encoded certificates and private keys.
       "sans": ["*.example.com", "www.example.com"],
       "issued": true,
       "certificate": "-----BEGIN CERTIFICATE-----\n...",
-      "private_key": "-----BEGIN PRIVATE KEY-----\n..."
+      "private_key": "-----BEGIN PRIVATE KEY-----\n...",
+      "cert_filename": "example.com.crt",
+      "key_filename": "example.com.key"
     }
   ]
   ```
