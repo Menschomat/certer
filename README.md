@@ -39,11 +39,12 @@ graph TD
 - Make (optional)
 
 ### Setup Configuration
-Create a `config.json` file in the project root:
+Create a `config.json` file in the project root. Note that `acme_directory_url` is optional, as the service dynamically defaults to Let's Encrypt Staging/Production or ZeroSSL based on your `acme_provider` and `ENV` settings.
+
 ```json
 {
   "acme_email": "admin@example.com",
-  "acme_directory_url": "https://acme-staging-v02.api.letsencrypt.org/directory",
+  "acme_provider": "letsencrypt",
   "dns_provider": "cloudflare",
   "renew_threshold_days": 30,
   "check_interval_hours": 24,
@@ -62,14 +63,32 @@ Create a `config.json` file in the project root:
 }
 ```
 
+### ACME Provider Configuration
+
+#### 1. Let's Encrypt (Default)
+By default, the service uses Let's Encrypt. The directory URL is automatically toggled depending on the `ENV` setting if `acme_directory_url` is omitted:
+- **`ENV=development`** (or default): Defaults to Let's Encrypt Staging (`https://acme-staging-v02.api.letsencrypt.org/directory`).
+- **`ENV=production`**: Defaults to Let's Encrypt Production (`https://acme-v02.api.letsencrypt.org/directory`).
+
+#### 2. ZeroSSL
+ZeroSSL requires External Account Binding (EAB) credentials. You can generate these credentials by logging into your ZeroSSL Developer Dashboard.
+
+To use ZeroSSL:
+- Set `"acme_provider": "zerossl"` in your `config.json` (or environment variable `ACME_PROVIDER=zerossl`). The directory URL will default to the ZeroSSL endpoint (`https://acme.zerossl.com/v2/DV90`).
+- Provide EAB credentials via configuration (`eab_kid` / `eab_hmac`) or environment variables (`EAB_KID` / `EAB_HMAC`).
+
 ### Authentication Environment Variables
-Provide API credentials for your DNS provider as environment variables:
+Provide API credentials for your DNS provider and ACME provider (if using ZeroSSL) as environment variables:
 ```bash
-# Cloudflare API Token
+# Cloudflare DNS API Token
 export CF_DNS_API_TOKEN="your_cloudflare_token"
 
-# Or Hetzner API Key
+# Or Hetzner DNS API Key
 export HETZNER_API_KEY="your_hetzner_api_key"
+
+# EAB credentials for ZeroSSL (if applicable)
+export EAB_KID="your_eab_key_id"
+export EAB_HMAC="your_eab_hmac_key"
 ```
 
 ---
@@ -138,6 +157,25 @@ Retrieve PEM-encoded certificates and private keys.
 
 ## Docker
 
+### Docker Compose (Recommended)
+You can configure and spin up the complete service using Docker Compose:
+
+1. **Prepare configuration:**
+   Ensure your `config.json` is set up in the root directory.
+2. **Set up environment variables:**
+   Copy the example environment file:
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` and fill in your DNS provider and/or ZeroSSL EAB credentials.
+3. **Start the service:**
+   ```bash
+   docker compose up -d --build
+   ```
+4. **Persisted Certs:**
+   Certs and private keys will automatically be saved and persisted in the local `./certs` directory.
+
+### Running with Docker CLI (Manual)
 Build minimal Docker image from scratch:
 ```bash
 docker build -t cert-central .
