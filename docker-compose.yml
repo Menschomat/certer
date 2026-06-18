@@ -13,29 +13,10 @@ services:
       - ./config.json:/config.json:ro
       # Persist issued SSL/TLS certificates and keys
       - ./certs:/certs
+    env_file:
+      - .env
     environment:
       # Point to the mounted configuration file
       - CONFIG_PATH=/config.json
       # Define certificate storage directory mapping to the mounted volume
       - CERT_STORAGE_DIR=/certs
-      
-      # Environment configurations
-      - PORT=${PORT:-8080}
-      - ENV=${ENV:-production}
-      - CHALLENGE_PORT=${CHALLENGE_PORT:-5002}
-      
-      # ACME Provider Configuration
-      - ACME_EMAIL=${ACME_EMAIL:-}
-      - ACME_PROVIDER=${ACME_PROVIDER:-letsencrypt}
-      - ACME_DIRECTORY_URL=${ACME_DIRECTORY_URL:-}
-      - EAB_KID=${EAB_KID:-}
-      - EAB_HMAC=${EAB_HMAC:-}
-      
-      # DNS Solver Configuration
-      - DNS_PROVIDER=${DNS_PROVIDER:-}
-      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN:-}
-      - HETZNER_API_KEY=${HETZNER_API_KEY:-}
-      
-      # Renewal Policies
-      - RENEW_THRESHOLD_DAYS=${RENEW_THRESHOLD_DAYS:-30}
-      - CHECK_INTERVAL_HOURS=${CHECK_INTERVAL_HOURS:-24}
