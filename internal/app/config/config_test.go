@@ -7,14 +7,26 @@ import (
 	"testing"
 )
 
-func TestLoadConfig(t *testing.T) {
+// createTempConfig creates a temporary config.json with the given content
+// and registers automated directory cleanup using t.Cleanup.
+func createTempConfig(t *testing.T, content string) string {
+	t.Helper()
 	tmpDir, err := os.MkdirTemp("", "config-tests-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		os.RemoveAll(tmpDir)
+	})
 
 	configPath := filepath.Join(tmpDir, "config.json")
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write config.json: %v", err)
+	}
+	return configPath
+}
+
+func TestLoadConfig(t *testing.T) {
 	configJSON := `{
 		"port": "9090",
 		"env": "production",
@@ -37,11 +49,7 @@ func TestLoadConfig(t *testing.T) {
 		]
 	}`
 
-	err = os.WriteFile(configPath, []byte(configJSON), 0644)
-	if err != nil {
-		t.Fatalf("Failed to write config.json: %v", err)
-	}
-
+	configPath := createTempConfig(t, configJSON)
 	os.Setenv("CONFIG_PATH", configPath)
 	defer os.Unsetenv("CONFIG_PATH")
 
@@ -147,19 +155,8 @@ func TestLoadConfigEnvDynamicACME(t *testing.T) {
 
 	// Subtest 4: JSON config with env production, no acme_directory_url
 	t.Run("json_env_production_no_acme_url", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "config-tests-*")
-		if err != nil {
-			t.Fatalf("Failed to create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
-
-		configPath := filepath.Join(tmpDir, "config.json")
 		configJSON := `{"env": "production"}`
-
-		err = os.WriteFile(configPath, []byte(configJSON), 0644)
-		if err != nil {
-			t.Fatalf("Failed to write config.json: %v", err)
-		}
+		configPath := createTempConfig(t, configJSON)
 
 		os.Setenv("CONFIG_PATH", configPath)
 		defer os.Unsetenv("CONFIG_PATH")
@@ -206,23 +203,12 @@ func TestLoadConfigZeroSSL(t *testing.T) {
 
 	// Subtest 2: JSON config with provider zerossl
 	t.Run("json_provider_zerossl", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "config-tests-*")
-		if err != nil {
-			t.Fatalf("Failed to create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
-
-		configPath := filepath.Join(tmpDir, "config.json")
 		configJSON := `{
 			"acme_provider": "zerossl",
 			"eab_kid": "json_kid",
 			"eab_hmac": "json_hmac"
 		}`
-
-		err = os.WriteFile(configPath, []byte(configJSON), 0644)
-		if err != nil {
-			t.Fatalf("Failed to write config.json: %v", err)
-		}
+		configPath := createTempConfig(t, configJSON)
 
 		os.Setenv("CONFIG_PATH", configPath)
 		defer os.Unsetenv("CONFIG_PATH")
@@ -243,5 +229,3 @@ func TestLoadConfigZeroSSL(t *testing.T) {
 		}
 	})
 }
-
-
