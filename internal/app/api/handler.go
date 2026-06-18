@@ -79,6 +79,7 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 
 		if token == "" {
+			slog.Warn("Unauthorized access attempt: missing token", "remote_addr", r.RemoteAddr, "path", r.URL.Path)
 			respondWithError(w, http.StatusUnauthorized, "missing authorization token")
 			return
 		}
@@ -96,6 +97,7 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 		}
 
 		if !authorized {
+			slog.Warn("Unauthorized access attempt: invalid token", "remote_addr", r.RemoteAddr, "path", r.URL.Path)
 			respondWithError(w, http.StatusUnauthorized, "invalid authorization token")
 			return
 		}
