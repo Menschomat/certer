@@ -99,23 +99,23 @@ cp example.config.json config.json
 
 #### Configuration Options
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `port` | string | `"8080"` | Port for the HTTP API server |
-| `env` | string | `"development"` | Service environment (`development` or `production`) |
-| `acme_provider` | string | `"letsencrypt"` | ACME provider (`letsencrypt` or `zerossl`) |
-| `acme_directory_url` | string | *(dynamic)* | Directory URL of the ACME CA server |
-| `acme_email` | string | *None* | Email address registered with the ACME provider |
-| `eab_kid` | string | *None* | Key ID for External Account Binding (EAB) |
-| `eab_hmac` | string | *None* | HMAC key for External Account Binding (EAB) |
-| `cert_storage_dir` | string | `"./certs"` | Directory where certificates and keys are persisted |
-| `challenge_port` | string | `"5002"` | HTTP port for the HTTP-01 challenge solver |
-| `dns_provider` | string | *None* | DNS provider (`cloudflare`, `hetzner`, or blank for HTTP-01 fallback) |
-| `dns_resolvers` | list | *None* | DNS resolvers to verify DNS-01 propagation |
-| `renew_threshold_days` | int | `30` | Days before expiry to trigger automatic renewal |
-| `check_interval_hours` | int | `24` | Hours between checking local certificate status |
-| `certificates` | list | *None* | Target certificates (primary domain and SANs) |
-| `api_keys` | list | *None* | Authorized API keys (Argon2id hashes) and allowed domains |
+| Field | Type | Default | Env Var | Description |
+|---|---|---|---|---|
+| `port` | string | `"8080"` | `PORT` | Port for the HTTP API server |
+| `env` | string | `"development"` | `ENV` | Service environment (`development` or `production`) |
+| `acme_provider` | string | `"letsencrypt"` | `ACME_PROVIDER` | ACME provider (`letsencrypt` or `zerossl`) |
+| `acme_directory_url` | string | *(dynamic)* | `ACME_DIRECTORY_URL` | Directory URL of the ACME CA server |
+| `acme_email` | string | *None* | `ACME_EMAIL` | Email address registered with the ACME provider |
+| `eab_kid` | string | *None* | `EAB_KID` | Key ID for External Account Binding (EAB) |
+| `eab_hmac` | string | *None* | `EAB_HMAC` | HMAC key for External Account Binding (EAB) |
+| `cert_storage_dir` | string | `"./certs"` | `CERT_STORAGE_DIR` | Directory where certificates and keys are persisted |
+| `challenge_port` | string | `"5002"` | `CHALLENGE_PORT` | HTTP port for the HTTP-01 challenge solver |
+| `dns_provider` | string | *None* | `DNS_PROVIDER` | DNS provider (`cloudflare`, `hetzner`, or blank for HTTP-01 fallback) |
+| `dns_resolvers` | list | *None* | `DNS_RESOLVERS` | DNS resolvers (comma-separated list) to verify DNS-01 propagation |
+| `renew_threshold_days` | int | `30` | `RENEW_THRESHOLD_DAYS` | Days before expiry to trigger automatic renewal |
+| `check_interval_hours` | int | `24` | `CHECK_INTERVAL_HOURS` | Hours between checking local certificate status |
+| `certificates` | list | *None* | *None* | Target certificates (primary domain and SANs) |
+| `api_keys` | list | *None* | *None* | Authorized API keys (Argon2id hashes) and allowed domains |
 
 ### ACME Provider Configuration
 
