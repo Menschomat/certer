@@ -283,3 +283,28 @@ func TestLoadConfigEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadConfigDNSResolvers(t *testing.T) {
+	// JSON loading test
+	configJSON := `{
+		"dns_resolvers": ["1.1.1.1:53", "8.8.8.8:53"]
+	}`
+	configPath := createTempConfig(t, configJSON)
+	os.Setenv("CONFIG_PATH", configPath)
+	defer os.Unsetenv("CONFIG_PATH")
+
+	cfg := Load()
+	expected := []string{"1.1.1.1:53", "8.8.8.8:53"}
+	if !reflect.DeepEqual(cfg.DNSResolvers, expected) {
+		t.Errorf("Expected DNSResolvers %v, got %v", expected, cfg.DNSResolvers)
+	}
+
+	// Env override test
+	os.Setenv("DNS_RESOLVERS", "9.9.9.9:53,4.2.2.2:53")
+	defer os.Unsetenv("DNS_RESOLVERS")
+	cfgOverride := Load()
+	expectedOverride := []string{"9.9.9.9:53", "4.2.2.2:53"}
+	if !reflect.DeepEqual(cfgOverride.DNSResolvers, expectedOverride) {
+		t.Errorf("Expected DNSResolvers %v, got %v", expectedOverride, cfgOverride.DNSResolvers)
+	}
+}
+

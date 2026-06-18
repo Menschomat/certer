@@ -28,7 +28,7 @@ func main() {
 	serverCtx, serverStopCtx := context.WithCancel(context.Background())
 
 	// Initialize certificate issuer
-	issuer := cert.NewIssuer(cfg.ACMEDirectoryURL, cfg.CertStorageDir, cfg.DNSProvider, cfg.ChallengePort, cfg.ACMEProvider, cfg.EABKid, cfg.EABHmac)
+	issuer := cert.NewIssuer(cfg.ACMEDirectoryURL, cfg.CertStorageDir, cfg.DNSProvider, cfg.ChallengePort, cfg.ACMEProvider, cfg.EABKid, cfg.EABHmac, cfg.DNSResolvers)
 
 	// Initialize and start background certificate scheduler
 	if cfg.ACMEEmail != "" && len(cfg.Certificates) > 0 {

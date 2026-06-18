@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/go-acme/lego/v5/acme"
 	"github.com/go-acme/lego/v5/certificate"
+	"github.com/go-acme/lego/v5/challenge"
+	"github.com/go-acme/lego/v5/challenge/dns01"
 	"github.com/go-acme/lego/v5/challenge/http01"
 	"github.com/go-acme/lego/v5/lego"
 	"github.com/go-acme/lego/v5/providers/dns/cloudflare"
@@ -29,10 +33,11 @@ type Issuer struct {
 	acmeProvider  string // "letsencrypt" or "zerossl"
 	eabKid        string // Key ID for ACME external account binding
 	eabHmac       string // HMAC key for ACME external account binding
+	dnsResolvers  []string
 }
 
 // NewIssuer creates a new Issuer instance.
-func NewIssuer(caDirURL, storageDir, dnsProvider, challengePort, acmeProvider, eabKid, eabHmac string) *Issuer {
+func NewIssuer(caDirURL, storageDir, dnsProvider, challengePort, acmeProvider, eabKid, eabHmac string, dnsResolvers []string) *Issuer {
 	return &Issuer{
 		caDirURL:      caDirURL,
 		storageDir:    storageDir,
@@ -41,6 +46,7 @@ func NewIssuer(caDirURL, storageDir, dnsProvider, challengePort, acmeProvider, e
 		acmeProvider:  acmeProvider,
 		eabKid:        eabKid,
 		eabHmac:       eabHmac,
+		dnsResolvers:  dnsResolvers,
 	}
 }
 
@@ -69,6 +75,13 @@ func (i *Issuer) Issue(ctx context.Context, email string, domains []string) (*Is
 	config := lego.NewConfig(user)
 	config.CADirURL = i.caDirURL
 
+	if len(i.dnsResolvers) > 0 {
+		dnsClient := dns01.NewClient(&dns01.Options{
+			RecursiveNameservers: i.dnsResolvers,
+		})
+		dns01.SetDefaultClient(dnsClient)
+	}
+
 	client, err := lego.NewClient(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create acme client: %w", err)
@@ -81,7 +94,7 @@ func (i *Issuer) Issue(ctx context.Context, email string, domains []string) (*Is
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize cloudflare provider: %w", err)
 		}
-		err = client.Challenge.SetDNS01Provider(provider)
+		err = client.Challenge.SetDNS01Provider(&syncProvider{provider: provider})
 		if err != nil {
 			return nil, fmt.Errorf("failed to set cloudflare dns challenge: %w", err)
 		}
@@ -90,7 +103,7 @@ func (i *Issuer) Issue(ctx context.Context, email string, domains []string) (*Is
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize hetzner provider: %w", err)
 		}
-		err = client.Challenge.SetDNS01Provider(provider)
+		err = client.Challenge.SetDNS01Provider(&syncProvider{provider: provider})
 		if err != nil {
 			return nil, fmt.Errorf("failed to set hetzner dns challenge: %w", err)
 		}
@@ -175,4 +188,28 @@ func (i *Issuer) saveCertificates(domain string, resource *certificate.Resource)
 	}
 
 	return nil
+}
+
+type syncProvider struct {
+	mu       sync.Mutex
+	provider challenge.Provider
+}
+
+func (s *syncProvider) Present(ctx context.Context, domain, token, keyAuth string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.provider.Present(ctx, domain, token, keyAuth)
+}
+
+func (s *syncProvider) CleanUp(ctx context.Context, domain, token, keyAuth string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.provider.CleanUp(ctx, domain, token, keyAuth)
+}
+
+func (s *syncProvider) Timeout() (timeout, interval time.Duration) {
+	if pt, ok := s.provider.(challenge.ProviderTimeout); ok {
+		return pt.Timeout()
+	}
+	return 60 * time.Second, 2 * time.Second
 }

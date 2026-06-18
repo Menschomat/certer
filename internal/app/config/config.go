@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // CertConfig configures primary domain and its SANs.
@@ -32,6 +33,7 @@ type Config struct {
 	ACMEEmail          string         `json:"acme_email"`
 	Certificates       []CertConfig   `json:"certificates"`
 	DNSProvider        string         `json:"dns_provider"`
+	DNSResolvers       []string       `json:"dns_resolvers"`
 	RenewThresholdDays int            `json:"renew_threshold_days"`
 	CheckIntervalHours int            `json:"check_interval_hours"`
 	APIKeys            []APIKeyConfig `json:"api_keys"`
@@ -89,6 +91,9 @@ func Load() *Config {
 			if jsonCfg.DNSProvider != "" {
 				cfg.DNSProvider = jsonCfg.DNSProvider
 			}
+			if len(jsonCfg.DNSResolvers) > 0 {
+				cfg.DNSResolvers = jsonCfg.DNSResolvers
+			}
 			if jsonCfg.RenewThresholdDays > 0 {
 				cfg.RenewThresholdDays = jsonCfg.RenewThresholdDays
 			}
@@ -136,6 +141,9 @@ func Load() *Config {
 	}
 	if envDNS := os.Getenv("DNS_PROVIDER"); envDNS != "" {
 		cfg.DNSProvider = envDNS
+	}
+	if envResolvers := os.Getenv("DNS_RESOLVERS"); envResolvers != "" {
+		cfg.DNSResolvers = strings.Split(envResolvers, ",")
 	}
 	if envRenew := os.Getenv("RENEW_THRESHOLD_DAYS"); envRenew != "" {
 		if val, err := strconv.Atoi(envRenew); err == nil {
