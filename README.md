@@ -114,6 +114,7 @@ make test
 ## Token Hashing Utility (CLI)
 Hash custom tokens or generate secure random credentials using the built-in CLI wrapper:
 
+#### 1. Running Locally
 ```bash
 # Generate random secure token and its Argon2id hash
 ./hash.sh
@@ -121,6 +122,17 @@ Hash custom tokens or generate secure random credentials using the built-in CLI 
 # Generate Argon2id hash for a custom token
 ./hash.sh -token mysecret
 ```
+
+#### 2. Running via Docker
+Since the keygen utility is compiled and copied into the Docker image, you can invoke it by overriding the container entrypoint:
+```bash
+# Generate random secure token and its Argon2id hash
+docker run --rm -it --entrypoint /keygen cert-central
+
+# Generate Argon2id hash for a custom token
+docker run --rm -it --entrypoint /keygen cert-central -token mysecret
+```
+
 
 ---
 
