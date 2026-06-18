@@ -1,9 +1,4 @@
 {
-  "acme_email": "user@example.com",
-  "acme_directory_url": "https://acme-staging-v02.api.letsencrypt.org/directory",
-  "dns_provider": "cloudflare",
-  "renew_threshold_days": 30,
-  "check_interval_hours": 24,
   "certificates": [
     {
       "primary": "example.com",

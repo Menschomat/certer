@@ -6,8 +6,8 @@ services:
     container_name: cert-central
     restart: unless-stopped
     ports:
-      - "8080:8080" # REST API
-      - "5002:5002" # HTTP-01 ACME Challenge Port (if not using DNS-01)
+      - "${PORT:-8080}:${PORT:-8080}" # REST API
+      - "${CHALLENGE_PORT:-5002}:${CHALLENGE_PORT:-5002}" # HTTP-01 ACME Challenge Port
     volumes:
       # Mount configuration file
       - ./config.json:/config.json:ro
@@ -18,13 +18,24 @@ services:
       - CONFIG_PATH=/config.json
       # Define certificate storage directory mapping to the mounted volume
       - CERT_STORAGE_DIR=/certs
-      # DNS provider credentials passed from .env
-      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN:-}
-      - HETZNER_API_KEY=${HETZNER_API_KEY:-}
-      - PORT=8080
+      
+      # Environment configurations
+      - PORT=${PORT:-8080}
       - ENV=${ENV:-production}
-      # ACME provider configuration (letsencrypt or zerossl)
+      - CHALLENGE_PORT=${CHALLENGE_PORT:-5002}
+      
+      # ACME Provider Configuration
+      - ACME_EMAIL=${ACME_EMAIL:-}
       - ACME_PROVIDER=${ACME_PROVIDER:-letsencrypt}
+      - ACME_DIRECTORY_URL=${ACME_DIRECTORY_URL:-}
       - EAB_KID=${EAB_KID:-}
       - EAB_HMAC=${EAB_HMAC:-}
-
+      
+      # DNS Solver Configuration
+      - DNS_PROVIDER=${DNS_PROVIDER:-}
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN:-}
+      - HETZNER_API_KEY=${HETZNER_API_KEY:-}
+      
+      # Renewal Policies
+      - RENEW_THRESHOLD_DAYS=${RENEW_THRESHOLD_DAYS:-30}
+      - CHECK_INTERVAL_HOURS=${CHECK_INTERVAL_HOURS:-24}
