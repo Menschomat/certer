@@ -18,6 +18,7 @@ type CertConfig struct {
 type APIKeyConfig struct {
 	Token          string   `json:"token"`
 	AllowedDomains []string `json:"allowed_domains"`
+	Admin          bool     `json:"admin"`
 }
 
 // Config holds application configuration.

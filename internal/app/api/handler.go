@@ -84,19 +84,17 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		var allowedDomains []string
-		authorized := false
+		var matchedKey *config.APIKeyConfig
 		for _, key := range s.apiKeys {
 			if key.Token != "" {
 				if match, err := VerifyToken(token, key.Token); err == nil && match {
-					allowedDomains = key.AllowedDomains
-					authorized = true
+					matchedKey = &key
 					break
 				}
 			}
 		}
 
-		if !authorized {
+		if matchedKey == nil {
 			tokenPrefix := token
 			if len(token) > 5 {
 				tokenPrefix = token[:5]
@@ -106,7 +104,23 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), allowedDomainsKey, allowedDomains)
+		isConfigPath := strings.HasPrefix(r.URL.Path, "/api/v1/config")
+
+		if matchedKey.Admin {
+			if !isConfigPath {
+				slog.Warn("Forbidden access attempt: admin token tried to access non-config route", "remote_addr", r.RemoteAddr, "path", r.URL.Path)
+				respondWithError(w, http.StatusForbidden, "admin tokens are restricted to config APIs only")
+				return
+			}
+		} else {
+			if isConfigPath {
+				slog.Warn("Forbidden access attempt: fetch token tried to access config route", "remote_addr", r.RemoteAddr, "path", r.URL.Path)
+				respondWithError(w, http.StatusForbidden, "fetch tokens are restricted from configuration APIs")
+				return
+			}
+		}
+
+		ctx := context.WithValue(r.Context(), allowedDomainsKey, matchedKey.AllowedDomains)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

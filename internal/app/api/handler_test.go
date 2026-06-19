@@ -189,3 +189,101 @@ func TestHandleGetCertificates_Authentication(t *testing.T) {
 		}
 	})
 }
+
+func TestAuthentication_Roles(t *testing.T) {
+	hashedFetchToken, err := GenerateArgon2idHash("fetch-token")
+	if err != nil {
+		t.Fatalf("Failed to generate fetch token hash: %v", err)
+	}
+	hashedAdminToken, err := GenerateArgon2idHash("admin-token")
+	if err != nil {
+		t.Fatalf("Failed to generate admin token hash: %v", err)
+	}
+
+	apiKeys := []config.APIKeyConfig{
+		{
+			Token:          hashedFetchToken,
+			AllowedDomains: []string{"example.com"},
+			Admin:          false,
+		},
+		{
+			Token:          hashedAdminToken,
+			Admin:          true,
+		},
+	}
+
+	server := NewServer("", nil, apiKeys)
+
+	// We wrap a dummy handler with s.Authenticate to test path-based authorization.
+	dummyHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	authHandler := server.Authenticate(dummyHandler)
+
+	tests := []struct {
+		name           string
+		token          string
+		path           string
+		method         string
+		expectedStatus int
+	}{
+		{
+			name:           "Fetch token accessing certs - Allowed",
+			token:          "fetch-token",
+			path:           "/api/v1/certificates",
+			method:         "GET",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Fetch token accessing config - Forbidden",
+			token:          "fetch-token",
+			path:           "/api/v1/config/certificates",
+			method:         "GET",
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "Admin token accessing config - Allowed",
+			token:          "admin-token",
+			path:           "/api/v1/config/certificates",
+			method:         "GET",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Admin token accessing certs - Forbidden",
+			token:          "admin-token",
+			path:           "/api/v1/certificates",
+			method:         "GET",
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "No token accessing config - Unauthorized",
+			token:          "",
+			path:           "/api/v1/config/certificates",
+			method:         "GET",
+			expectedStatus: http.StatusUnauthorized,
+		},
+		{
+			name:           "Invalid token accessing config - Unauthorized",
+			token:          "invalid-token",
+			path:           "/api/v1/config/certificates",
+			method:         "GET",
+			expectedStatus: http.StatusUnauthorized,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			if tt.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.token)
+			}
+			rr := httptest.NewRecorder()
+			authHandler.ServeHTTP(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
+		})
+	}
+}
+
