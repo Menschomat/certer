@@ -69,9 +69,14 @@ func (p *CertCentralProvider) Configure(ctx context.Context, req provider.Config
 }
 
 func (p *CertCentralProvider) Resources(ctx context.Context) []func() resource.Resource {
-	return nil
+	return []func() resource.Resource{
+		NewCertificateResource,
+		NewAPIKeyResource,
+	}
 }
 
 func (p *CertCentralProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
-	return nil
+	return []func() datasource.DataSource{
+		NewCertificateDataSource,
+	}
 }
