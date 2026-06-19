@@ -174,3 +174,13 @@ func defaultACMEURL(provider, env string) string {
 	}
 	return "https://acme-staging-v02.api.letsencrypt.org/directory"
 }
+
+// Save serializes the configuration as indented JSON and writes it to the specified filepath.
+func (c *Config) Save(filepath string) error {
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath, data, 0644)
+}
+

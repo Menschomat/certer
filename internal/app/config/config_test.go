@@ -308,3 +308,60 @@ func TestLoadConfigDNSResolvers(t *testing.T) {
 	}
 }
 
+func TestSaveConfig(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "config-save-tests-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	savePath := filepath.Join(tmpDir, "saved_config.json")
+
+	cfg := &Config{
+		Port:               "8080",
+		Env:                "development",
+		ACMEProvider:       "letsencrypt",
+		CertStorageDir:     "./certs",
+		ChallengePort:      "5002",
+		ACMEEmail:          "admin@example.com",
+		RenewThresholdDays: 30,
+		CheckIntervalHours: 24,
+		Certificates: []CertConfig{
+			{
+				Primary: "example.com",
+				Sans:    []string{"*.example.com"},
+			},
+		},
+		APIKeys: []APIKeyConfig{
+			{
+				Token:          "hashed-token",
+				AllowedDomains: []string{"example.com"},
+				Admin:          true,
+			},
+		},
+	}
+
+	if err := cfg.Save(savePath); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	// Verify the file was written and can be correctly loaded back
+	os.Setenv("CONFIG_PATH", savePath)
+	defer os.Unsetenv("CONFIG_PATH")
+
+	loadedCfg := Load()
+
+	if loadedCfg.Port != cfg.Port {
+		t.Errorf("Expected Port %q, got %q", cfg.Port, loadedCfg.Port)
+	}
+	if loadedCfg.ACMEEmail != cfg.ACMEEmail {
+		t.Errorf("Expected ACMEEmail %q, got %q", cfg.ACMEEmail, loadedCfg.ACMEEmail)
+	}
+	if !reflect.DeepEqual(loadedCfg.Certificates, cfg.Certificates) {
+		t.Errorf("Expected Certificates %+v, got %+v", cfg.Certificates, loadedCfg.Certificates)
+	}
+	if !reflect.DeepEqual(loadedCfg.APIKeys, cfg.APIKeys) {
+		t.Errorf("Expected APIKeys %+v, got %+v", cfg.APIKeys, loadedCfg.APIKeys)
+	}
+}
+
+
