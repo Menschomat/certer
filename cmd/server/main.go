@@ -31,15 +31,16 @@ func main() {
 	issuer := cert.NewIssuer(cfg.ACMEDirectoryURL, cfg.CertStorageDir, cfg.DNSProvider, cfg.ChallengePort, cfg.ACMEProvider, cfg.EABKid, cfg.EABHmac, cfg.DNSResolvers)
 
 	// Initialize and start background certificate scheduler
+	var scheduler *cert.Scheduler
 	if cfg.ACMEEmail != "" && len(cfg.Certificates) > 0 {
-		scheduler := cert.NewScheduler(issuer, cfg.ACMEEmail, cfg.Certificates, cfg.CertStorageDir, cfg.RenewThresholdDays, cfg.CheckIntervalHours)
+		scheduler = cert.NewScheduler(issuer, cfg.ACMEEmail, cfg.Certificates, cfg.CertStorageDir, cfg.RenewThresholdDays, cfg.CheckIntervalHours)
 		go scheduler.Start(serverCtx)
 	} else {
 		logger.Warn("Certificate scheduler not started: ACME_EMAIL and certificates list must be configured")
 	}
 
 	// Setup API server and routes
-	srvAPI := api.NewServer(cfg.CertStorageDir, cfg.Certificates, cfg.APIKeys)
+	srvAPI := api.NewServer(cfg.CertStorageDir, cfg, scheduler)
 
 	// Configure http.Server with production timeouts
 	srv := &http.Server{

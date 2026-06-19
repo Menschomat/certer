@@ -24,7 +24,7 @@ jobs:
         run: go mod download
 
       - name: Run Tests
-        run: go test -v ./...
+        run: go test -race -v ./...
 
       - name: Build Binaries
         run: make build

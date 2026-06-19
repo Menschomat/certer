@@ -33,7 +33,7 @@ build-all: build-darwin-arm64 build-linux-amd64 build-linux-arm64
 
 # Run tests
 test:
-	go test -v ./...
+	go test -race -v ./...
 
 # Build Docker image
 docker:

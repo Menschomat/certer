@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -16,7 +17,7 @@ import (
 )
 
 func TestHandleHealth(t *testing.T) {
-	server := NewServer("", nil, nil)
+	server := NewServer("", &config.Config{}, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
 
@@ -32,7 +33,7 @@ func TestHandleHealth(t *testing.T) {
 }
 
 func TestHandleHello(t *testing.T) {
-	server := NewServer("", nil, nil)
+	server := NewServer("", &config.Config{}, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
 
@@ -92,7 +93,11 @@ func TestHandleGetCertificates_Authentication(t *testing.T) {
 		}
 	}
 
-	server := NewServer(tmpDir, certsConfig, apiKeys)
+	cfg := &config.Config{
+		Certificates: certsConfig,
+		APIKeys:      apiKeys,
+	}
+	server := NewServer(tmpDir, cfg, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
 
@@ -213,7 +218,10 @@ func TestAuthentication_Roles(t *testing.T) {
 		},
 	}
 
-	server := NewServer("", nil, apiKeys)
+	cfg := &config.Config{
+		APIKeys: apiKeys,
+	}
+	server := NewServer("", cfg, nil)
 
 	// We wrap a dummy handler with s.Authenticate to test path-based authorization.
 	dummyHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -299,7 +307,10 @@ func TestServer_ReloadConfig_Concurrency(t *testing.T) {
 		},
 	}
 
-	server := NewServer("", nil, apiKeys)
+	cfg := &config.Config{
+		APIKeys: apiKeys,
+	}
+	server := NewServer("", cfg, nil)
 
 	// Spin up goroutines making requests to simulate traffic
 	stopChan := make(chan struct{})
@@ -333,5 +344,296 @@ func TestServer_ReloadConfig_Concurrency(t *testing.T) {
 
 	close(stopChan)
 }
+
+type MockReloader struct {
+	CalledCount int
+	CalledCerts []config.CertConfig
+}
+
+func (m *MockReloader) ReloadConfig(ctx context.Context, certificates []config.CertConfig) {
+	m.CalledCount++
+	m.CalledCerts = certificates
+}
+
+func TestControlPlaneAPI(t *testing.T) {
+	// Create temporary directory for configuration persistence testing
+	tmpDir, err := os.MkdirTemp("", "control-plane-api-tests-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	configPath := filepath.Join(tmpDir, "config.json")
+	os.Setenv("CONFIG_PATH", configPath)
+	defer os.Unsetenv("CONFIG_PATH")
+
+	// Set up initial configuration structure
+	initialConfig := &config.Config{
+		Port: "8080",
+		APIKeys: []config.APIKeyConfig{
+			{
+				Token: "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs", // hash for "blabliblub"
+				Admin: true,
+			},
+			{
+				Token:          "fetch-token-hash",
+				AllowedDomains: []string{"example.com"},
+				Admin:          false,
+			},
+		},
+		Certificates: []config.CertConfig{
+			{
+				Primary: "example.com",
+				Sans:    []string{"www.example.com"},
+			},
+		},
+	}
+	if err := initialConfig.Save(configPath); err != nil {
+		t.Fatalf("Failed to save initial config: %v", err)
+	}
+
+	reloader := &MockReloader{}
+	server := NewServer(tmpDir, initialConfig, reloader)
+	ts := httptest.NewServer(server.Routes())
+	defer ts.Close()
+
+	// Admin Authorization Header
+	adminHeader := "Bearer blabliblub"
+
+	t.Run("GET Certificates Configuration", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/config/certificates", nil)
+		req.Header.Set("Authorization", adminHeader)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
+		}
+
+		var certs []config.CertConfig
+		if err := json.NewDecoder(res.Body).Decode(&certs); err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+		if len(certs) != 1 || certs[0].Primary != "example.com" {
+			t.Errorf("Unexpected certificates response: %+v", certs)
+		}
+	})
+
+	t.Run("POST Certificate Configuration - Success", func(t *testing.T) {
+		newCert := config.CertConfig{
+			Primary: "newdomain.com",
+			Sans:    []string{"*.newdomain.com"},
+		}
+		body, _ := json.Marshal(newCert)
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/config/certificates", bytes.NewReader(body))
+		req.Header.Set("Authorization", adminHeader)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusCreated {
+			t.Errorf("Expected 201 Created, got %d", res.StatusCode)
+		}
+
+		// Verify reloader was called
+		if reloader.CalledCount != 1 {
+			t.Errorf("Expected reloader to be called once, got %d", reloader.CalledCount)
+		}
+
+		// Verify saved config file has the new certificate
+		loadedCfg := config.Load()
+		if len(loadedCfg.Certificates) != 2 || loadedCfg.Certificates[1].Primary != "newdomain.com" {
+			t.Errorf("Expected new certificate to be saved on disk, got: %+v", loadedCfg.Certificates)
+		}
+	})
+
+	t.Run("POST Certificate Configuration - Conflict", func(t *testing.T) {
+		duplicateCert := config.CertConfig{
+			Primary: "example.com",
+		}
+		body, _ := json.Marshal(duplicateCert)
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/config/certificates", bytes.NewReader(body))
+		req.Header.Set("Authorization", adminHeader)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusConflict {
+			t.Errorf("Expected 409 Conflict, got %d", res.StatusCode)
+		}
+	})
+
+	t.Run("PUT Certificate Configuration - Success", func(t *testing.T) {
+		updatedCert := config.CertConfig{
+			Sans: []string{"admin.example.com", "mail.example.com"},
+		}
+		body, _ := json.Marshal(updatedCert)
+		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config/certificates/example.com", bytes.NewReader(body))
+		req.Header.Set("Authorization", adminHeader)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
+		}
+
+		loadedCfg := config.Load()
+		for _, c := range loadedCfg.Certificates {
+			if c.Primary == "example.com" {
+				if len(c.Sans) != 2 || c.Sans[0] != "admin.example.com" {
+					t.Errorf("Expected updated SANs, got %+v", c.Sans)
+				}
+			}
+		}
+	})
+
+	t.Run("PUT Certificate Configuration - Not Found", func(t *testing.T) {
+		updatedCert := config.CertConfig{
+			Sans: []string{"mail.nonexistent.com"},
+		}
+		body, _ := json.Marshal(updatedCert)
+		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config/certificates/nonexistent.com", bytes.NewReader(body))
+		req.Header.Set("Authorization", adminHeader)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("Expected 404 Not Found, got %d", res.StatusCode)
+		}
+	})
+
+	t.Run("DELETE Certificate Configuration - Success", func(t *testing.T) {
+		req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/config/certificates/newdomain.com", nil)
+		req.Header.Set("Authorization", adminHeader)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusNoContent {
+			t.Errorf("Expected 204 No Content, got %d", res.StatusCode)
+		}
+
+		loadedCfg := config.Load()
+		if len(loadedCfg.Certificates) != 1 || loadedCfg.Certificates[0].Primary != "example.com" {
+			t.Errorf("Expected newdomain.com to be removed from disk, got: %+v", loadedCfg.Certificates)
+		}
+	})
+
+	t.Run("GET API Keys Configuration", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/config/api_keys", nil)
+		req.Header.Set("Authorization", adminHeader)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
+		}
+
+		var keys []config.APIKeyConfig
+		if err := json.NewDecoder(res.Body).Decode(&keys); err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+		if len(keys) != 2 {
+			t.Errorf("Unexpected API keys count: %d", len(keys))
+		}
+	})
+
+	t.Run("POST API Key Configuration - Success", func(t *testing.T) {
+		newKey := config.APIKeyConfig{
+			Token:          "new-hash",
+			AllowedDomains: []string{"newdomain.com"},
+			Admin:          false,
+		}
+		body, _ := json.Marshal(newKey)
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/config/api_keys", bytes.NewReader(body))
+		req.Header.Set("Authorization", adminHeader)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusCreated {
+			t.Errorf("Expected 201 Created, got %d", res.StatusCode)
+		}
+
+		loadedCfg := config.Load()
+		if len(loadedCfg.APIKeys) != 3 || loadedCfg.APIKeys[2].Token != "new-hash" {
+			t.Errorf("Expected new API Key configuration to be saved, got: %+v", loadedCfg.APIKeys)
+		}
+	})
+
+	t.Run("PUT API Key Configuration - Success", func(t *testing.T) {
+		updatedKey := config.APIKeyConfig{
+			Token:          "new-hash",
+			AllowedDomains: []string{"updated-domain.com"},
+			Admin:          true,
+		}
+		body, _ := json.Marshal(updatedKey)
+		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config/api_keys", bytes.NewReader(body))
+		req.Header.Set("Authorization", adminHeader)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
+		}
+
+		loadedCfg := config.Load()
+		for _, k := range loadedCfg.APIKeys {
+			if k.Token == "new-hash" {
+				if !k.Admin || len(k.AllowedDomains) != 1 || k.AllowedDomains[0] != "updated-domain.com" {
+					t.Errorf("Expected updated key settings, got: %+v", k)
+				}
+			}
+		}
+	})
+
+	t.Run("DELETE API Key Configuration - Success", func(t *testing.T) {
+		req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/config/api_keys?token=new-hash", nil)
+		req.Header.Set("Authorization", adminHeader)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusNoContent {
+			t.Errorf("Expected 204 No Content, got %d", res.StatusCode)
+		}
+
+		loadedCfg := config.Load()
+		if len(loadedCfg.APIKeys) != 2 {
+			t.Errorf("Expected key to be removed from disk, got: %+v", loadedCfg.APIKeys)
+		}
+	})
+}
+
 
 

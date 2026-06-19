@@ -17,20 +17,25 @@ type contextKey string
 
 const allowedDomainsKey contextKey = "allowed_domains"
 
+// ConfigReloader defines the interface to reload scheduler configuration.
+type ConfigReloader interface {
+	ReloadConfig(ctx context.Context, certificates []config.CertConfig)
+}
+
 // Server handles API routes and dependencies.
 type Server struct {
-	mu           sync.RWMutex
-	storageDir   string
-	certificates []config.CertConfig
-	apiKeys      []config.APIKeyConfig
+	mu         sync.RWMutex
+	storageDir string
+	cfg        *config.Config
+	reloader   ConfigReloader
 }
 
 // NewServer creates a new Server instance.
-func NewServer(storageDir string, certificates []config.CertConfig, apiKeys []config.APIKeyConfig) *Server {
+func NewServer(storageDir string, cfg *config.Config, reloader ConfigReloader) *Server {
 	return &Server{
-		storageDir:   storageDir,
-		certificates: certificates,
-		apiKeys:      apiKeys,
+		storageDir: storageDir,
+		cfg:        cfg,
+		reloader:   reloader,
 	}
 }
 
@@ -41,6 +46,18 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /api/v1/hello", s.handleHello)
 	mux.Handle("GET /api/v1/certificates", s.Authenticate(http.HandlerFunc(s.handleGetCertificates)))
+
+	// Control plane APIs (Certificates)
+	mux.Handle("GET /api/v1/config/certificates", s.Authenticate(http.HandlerFunc(s.handleGetConfigCertificates)))
+	mux.Handle("POST /api/v1/config/certificates", s.Authenticate(http.HandlerFunc(s.handlePostConfigCertificates)))
+	mux.Handle("PUT /api/v1/config/certificates/{domain}", s.Authenticate(http.HandlerFunc(s.handlePutConfigCertificates)))
+	mux.Handle("DELETE /api/v1/config/certificates/{domain}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigCertificates)))
+
+	// Control plane APIs (API Keys)
+	mux.Handle("GET /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handleGetConfigAPIKeys)))
+	mux.Handle("POST /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handlePostConfigAPIKeys)))
+	mux.Handle("PUT /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handlePutConfigAPIKeys)))
+	mux.Handle("DELETE /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigAPIKeys)))
 
 	return mux
 }
@@ -88,7 +105,7 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 
 		var matchedKey *config.APIKeyConfig
 		s.mu.RLock()
-		for _, key := range s.apiKeys {
+		for _, key := range s.cfg.APIKeys {
 			if key.Token != "" {
 				if match, err := VerifyToken(token, key.Token); err == nil && match {
 					tempKey := key
@@ -140,8 +157,8 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 	respList := []CertificateResponse{}
 
 	s.mu.RLock()
-	certs := make([]config.CertConfig, len(s.certificates))
-	copy(certs, s.certificates)
+	certs := make([]config.CertConfig, len(s.cfg.Certificates))
+	copy(certs, s.cfg.Certificates)
 	s.mu.RUnlock()
 
 	for _, cc := range certs {
@@ -202,6 +219,268 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ReloadConfig(certificates []config.CertConfig, apiKeys []config.APIKeyConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.certificates = certificates
-	s.apiKeys = apiKeys
+	s.cfg.Certificates = certificates
+	s.cfg.APIKeys = apiKeys
+}
+
+func (s *Server) saveAndReload(ctx context.Context) error {
+	configPath := os.Getenv("CONFIG_PATH")
+	if configPath == "" {
+		configPath = "./config.json"
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 1. Save config to disk
+	if err := s.cfg.Save(configPath); err != nil {
+		slog.Error("Failed to save config on disk", "error", err)
+		return err
+	}
+
+	// 2. Reload scheduler (if present)
+	if s.reloader != nil {
+		certs := make([]config.CertConfig, len(s.cfg.Certificates))
+		copy(certs, s.cfg.Certificates)
+		s.reloader.ReloadConfig(ctx, certs)
+	}
+
+	return nil
+}
+
+func (s *Server) handleGetConfigCertificates(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	certs := make([]config.CertConfig, len(s.cfg.Certificates))
+	copy(certs, s.cfg.Certificates)
+	s.mu.RUnlock()
+
+	respondWithJSON(w, http.StatusOK, certs)
+}
+
+func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Request) {
+	var payload config.CertConfig
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if payload.Primary == "" {
+		respondWithError(w, http.StatusBadRequest, "primary domain is required")
+		return
+	}
+
+	s.mu.Lock()
+	exists := false
+	for _, c := range s.cfg.Certificates {
+		if c.Primary == payload.Primary {
+			exists = true
+			break
+		}
+	}
+	s.mu.Unlock()
+
+	if exists {
+		respondWithError(w, http.StatusConflict, "certificate configuration for primary domain already exists")
+		return
+	}
+
+	s.mu.Lock()
+	s.cfg.Certificates = append(s.cfg.Certificates, payload)
+	s.mu.Unlock()
+
+	if err := s.saveAndReload(r.Context()); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, payload)
+}
+
+func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Request) {
+	domain := r.PathValue("domain")
+	if domain == "" {
+		respondWithError(w, http.StatusBadRequest, "domain parameter is required")
+		return
+	}
+
+	var payload config.CertConfig
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	s.mu.Lock()
+	foundIdx := -1
+	for idx, c := range s.cfg.Certificates {
+		if c.Primary == domain {
+			foundIdx = idx
+			break
+		}
+	}
+
+	if foundIdx == -1 {
+		s.mu.Unlock()
+		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
+		return
+	}
+
+	s.cfg.Certificates[foundIdx].Sans = payload.Sans
+	s.mu.Unlock()
+
+	if err := s.saveAndReload(r.Context()); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleDeleteConfigCertificates(w http.ResponseWriter, r *http.Request) {
+	domain := r.PathValue("domain")
+	if domain == "" {
+		respondWithError(w, http.StatusBadRequest, "domain parameter is required")
+		return
+	}
+
+	s.mu.Lock()
+	foundIdx := -1
+	for idx, c := range s.cfg.Certificates {
+		if c.Primary == domain {
+			foundIdx = idx
+			break
+		}
+	}
+
+	if foundIdx == -1 {
+		s.mu.Unlock()
+		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
+		return
+	}
+
+	s.cfg.Certificates = append(s.cfg.Certificates[:foundIdx], s.cfg.Certificates[foundIdx+1:]...)
+	s.mu.Unlock()
+
+	if err := s.saveAndReload(r.Context()); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleGetConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	keys := make([]config.APIKeyConfig, len(s.cfg.APIKeys))
+	copy(keys, s.cfg.APIKeys)
+	s.mu.RUnlock()
+
+	respondWithJSON(w, http.StatusOK, keys)
+}
+
+func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
+	var payload config.APIKeyConfig
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if payload.Token == "" {
+		respondWithError(w, http.StatusBadRequest, "token is required")
+		return
+	}
+
+	s.mu.Lock()
+	exists := false
+	for _, k := range s.cfg.APIKeys {
+		if k.Token == payload.Token {
+			exists = true
+			break
+		}
+	}
+	s.mu.Unlock()
+
+	if exists {
+		respondWithError(w, http.StatusConflict, "API key configuration already exists")
+		return
+	}
+
+	s.mu.Lock()
+	s.cfg.APIKeys = append(s.cfg.APIKeys, payload)
+	s.mu.Unlock()
+
+	if err := s.saveAndReload(r.Context()); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, payload)
+}
+
+func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
+	var payload config.APIKeyConfig
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if payload.Token == "" {
+		respondWithError(w, http.StatusBadRequest, "token is required")
+		return
+	}
+
+	s.mu.Lock()
+	foundIdx := -1
+	for idx, k := range s.cfg.APIKeys {
+		if k.Token == payload.Token {
+			foundIdx = idx
+			break
+		}
+	}
+
+	if foundIdx == -1 {
+		s.mu.Unlock()
+		respondWithError(w, http.StatusNotFound, "API key configuration not found")
+		return
+	}
+
+	s.cfg.APIKeys[foundIdx].AllowedDomains = payload.AllowedDomains
+	s.cfg.APIKeys[foundIdx].Admin = payload.Admin
+	s.mu.Unlock()
+
+	if err := s.saveAndReload(r.Context()); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleDeleteConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		respondWithError(w, http.StatusBadRequest, "token query parameter is required")
+		return
+	}
+
+	s.mu.Lock()
+	foundIdx := -1
+	for idx, k := range s.cfg.APIKeys {
+		if k.Token == token {
+			foundIdx = idx
+			break
+		}
+	}
+
+	if foundIdx == -1 {
+		s.mu.Unlock()
+		respondWithError(w, http.StatusNotFound, "API key configuration not found")
+		return
+	}
+
+	s.cfg.APIKeys = append(s.cfg.APIKeys[:foundIdx], s.cfg.APIKeys[foundIdx+1:]...)
+	s.mu.Unlock()
+
+	if err := s.saveAndReload(r.Context()); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
