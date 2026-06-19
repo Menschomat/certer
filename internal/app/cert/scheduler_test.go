@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 )
 
 type MockIssuer struct {
+	mu            sync.RWMutex
 	CalledCount   int
 	CalledEmail   string
 	CalledDomains [][]string
@@ -26,9 +28,11 @@ type MockIssuer struct {
 }
 
 func (m *MockIssuer) Issue(ctx context.Context, email string, domains []string) (*IssueResult, error) {
+	m.mu.Lock()
 	m.CalledCount++
 	m.CalledEmail = email
 	m.CalledDomains = append(m.CalledDomains, domains)
+	m.mu.Unlock()
 	return &IssueResult{
 		Domain:      domains[0],
 		Certificate: []byte("mock-cert"),
@@ -198,3 +202,42 @@ func TestScheduler_CheckAndRenew(t *testing.T) {
 		}
 	})
 }
+
+func TestScheduler_ReloadConfig(t *testing.T) {
+	mock := &MockIssuer{}
+	s := NewScheduler(mock, "user@example.com", nil, "", 30, 24)
+
+	newCerts := []config.CertConfig{
+		{
+			Primary: "newdomain.com",
+			Sans:    []string{"www.newdomain.com"},
+		},
+	}
+
+	s.ReloadConfig(context.Background(), newCerts)
+
+	// Since ReloadConfig runs CheckAndRenew in a background goroutine, we need to wait a brief moment for it to run.
+	time.Sleep(100 * time.Millisecond)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.certificates) != 1 || s.certificates[0].Primary != "newdomain.com" {
+		t.Errorf("Expected certificates to be reloaded, got %v", s.certificates)
+	}
+
+	mock.mu.RLock()
+	calledCount := mock.CalledCount
+	var calledDomain string
+	if len(mock.CalledDomains) > 0 && len(mock.CalledDomains[0]) > 0 {
+		calledDomain = mock.CalledDomains[0][0]
+	}
+	mock.mu.RUnlock()
+
+	if calledCount != 1 {
+		t.Errorf("Expected issue to be called once on reload, got %d", calledCount)
+	}
+	if calledDomain != "newdomain.com" {
+		t.Errorf("Expected newdomain.com to be checked, got %q", calledDomain)
+	}
+}
+

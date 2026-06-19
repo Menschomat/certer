@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"cert-central/internal/app/config"
 )
@@ -18,6 +19,7 @@ const allowedDomainsKey contextKey = "allowed_domains"
 
 // Server handles API routes and dependencies.
 type Server struct {
+	mu           sync.RWMutex
 	storageDir   string
 	certificates []config.CertConfig
 	apiKeys      []config.APIKeyConfig
@@ -85,14 +87,17 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 		}
 
 		var matchedKey *config.APIKeyConfig
+		s.mu.RLock()
 		for _, key := range s.apiKeys {
 			if key.Token != "" {
 				if match, err := VerifyToken(token, key.Token); err == nil && match {
-					matchedKey = &key
+					tempKey := key
+					matchedKey = &tempKey
 					break
 				}
 			}
 		}
+		s.mu.RUnlock()
 
 		if matchedKey == nil {
 			tokenPrefix := token
@@ -134,7 +139,12 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 
 	respList := []CertificateResponse{}
 
-	for _, cc := range s.certificates {
+	s.mu.RLock()
+	certs := make([]config.CertConfig, len(s.certificates))
+	copy(certs, s.certificates)
+	s.mu.RUnlock()
+
+	for _, cc := range certs {
 		if cc.Primary == "" {
 			continue
 		}
@@ -186,4 +196,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"up"}`))
+}
+
+// ReloadConfig updates the server's certificates and API keys in a thread-safe manner.
+func (s *Server) ReloadConfig(certificates []config.CertConfig, apiKeys []config.APIKeyConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.certificates = certificates
+	s.apiKeys = apiKeys
 }

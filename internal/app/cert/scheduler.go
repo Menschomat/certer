@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"cert-central/internal/app/config"
@@ -18,6 +19,7 @@ import (
 
 // Scheduler coordinates periodic checks and renewals for SSL certificates.
 type Scheduler struct {
+	mu                 sync.RWMutex
 	issuer             CertificateIssuer
 	email              string
 	certificates       []config.CertConfig
@@ -65,7 +67,12 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 // CheckAndRenew checks current cert status for all configured certificate groups and triggers ACME renewal if necessary.
 func (s *Scheduler) CheckAndRenew(ctx context.Context) error {
-	for _, cc := range s.certificates {
+	s.mu.RLock()
+	certs := make([]config.CertConfig, len(s.certificates))
+	copy(certs, s.certificates)
+	s.mu.RUnlock()
+
+	for _, cc := range certs {
 		if cc.Primary == "" {
 			continue
 		}
@@ -109,11 +116,13 @@ func (s *Scheduler) cleanupUnusedCertificates() {
 
 	// Create a map of configured primary domains
 	configured := make(map[string]bool)
+	s.mu.RLock()
 	for _, cc := range s.certificates {
 		if cc.Primary != "" {
 			configured[cc.Primary] = true
 		}
 	}
+	s.mu.RUnlock()
 
 	for _, file := range files {
 		if file.IsDir() {
@@ -186,4 +195,19 @@ func domainsMatch(a, b []string) bool {
 	sort.Strings(bc)
 
 	return reflect.DeepEqual(ac, bc)
+}
+
+// ReloadConfig updates the scheduler's certificates list in a thread-safe manner
+// and immediately triggers a background check and renew cycle.
+func (s *Scheduler) ReloadConfig(ctx context.Context, certificates []config.CertConfig) {
+	s.mu.Lock()
+	s.certificates = certificates
+	s.mu.Unlock()
+
+	slog.Info("Scheduler configuration reloaded, triggering immediate check and renew cycle")
+	go func() {
+		if err := s.CheckAndRenew(ctx); err != nil {
+			slog.Error("Failed to execute check and renew cycle after reload", "error", err)
+		}
+	}()
 }

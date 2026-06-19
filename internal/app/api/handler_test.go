@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"cert-central/internal/app/config"
 )
@@ -286,4 +287,51 @@ func TestAuthentication_Roles(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_ReloadConfig_Concurrency(t *testing.T) {
+	hashedFetchToken1, _ := GenerateArgon2idHash("fetch-token-1")
+	hashedFetchToken2, _ := GenerateArgon2idHash("fetch-token-2")
+
+	apiKeys := []config.APIKeyConfig{
+		{
+			Token:          hashedFetchToken1,
+			AllowedDomains: []string{"domain1.com"},
+		},
+	}
+
+	server := NewServer("", nil, apiKeys)
+
+	// Spin up goroutines making requests to simulate traffic
+	stopChan := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stopChan:
+				return
+			default:
+				req := httptest.NewRequest("GET", "/api/v1/certificates", nil)
+				req.Header.Set("Authorization", "Bearer fetch-token-1")
+				rr := httptest.NewRecorder()
+				server.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				})).ServeHTTP(rr, req)
+			}
+		}
+	}()
+
+	// Perform concurrent reloads
+	for i := 0; i < 50; i++ {
+		newKeys := []config.APIKeyConfig{
+			{
+				Token:          hashedFetchToken2,
+				AllowedDomains: []string{"domain2.com"},
+			},
+		}
+		server.ReloadConfig(nil, newKeys)
+		time.Sleep(1 * time.Millisecond)
+	}
+
+	close(stopChan)
+}
+
 
