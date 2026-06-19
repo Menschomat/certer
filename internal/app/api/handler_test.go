@@ -371,10 +371,12 @@ func TestControlPlaneAPI(t *testing.T) {
 		Port: "8080",
 		APIKeys: []config.APIKeyConfig{
 			{
+				Name:  "admin-key",
 				Token: "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs", // hash for "blabliblub"
 				Admin: true,
 			},
 			{
+				Name:           "fetch-key",
 				Token:          "fetch-token-hash",
 				AllowedDomains: []string{"example.com"},
 				Admin:          false,
@@ -561,7 +563,7 @@ func TestControlPlaneAPI(t *testing.T) {
 
 	t.Run("POST API Key Configuration - Success", func(t *testing.T) {
 		newKey := config.APIKeyConfig{
-			Token:          "new-hash",
+			Name:           "new-key",
 			AllowedDomains: []string{"newdomain.com"},
 			Admin:          false,
 		}
@@ -579,15 +581,34 @@ func TestControlPlaneAPI(t *testing.T) {
 			t.Errorf("Expected 201 Created, got %d", res.StatusCode)
 		}
 
+		type apiResponse struct {
+			Name           string   `json:"name"`
+			Token          string   `json:"token"`
+			CleartextToken string   `json:"cleartext_token"`
+			AllowedDomains []string `json:"allowed_domains"`
+			Admin          bool     `json:"admin"`
+		}
+		var resp apiResponse
+		if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+
+		if resp.Name != "new-key" {
+			t.Errorf("Expected name 'new-key', got %s", resp.Name)
+		}
+		if len(resp.CleartextToken) != 64 {
+			t.Errorf("Expected 64-character cleartext token, got %s (length %d)", resp.CleartextToken, len(resp.CleartextToken))
+		}
+
 		loadedCfg := config.Load()
-		if len(loadedCfg.APIKeys) != 3 || loadedCfg.APIKeys[2].Token != "new-hash" {
+		if len(loadedCfg.APIKeys) != 3 || loadedCfg.APIKeys[2].Name != "new-key" {
 			t.Errorf("Expected new API Key configuration to be saved, got: %+v", loadedCfg.APIKeys)
 		}
 	})
 
 	t.Run("PUT API Key Configuration - Success", func(t *testing.T) {
 		updatedKey := config.APIKeyConfig{
-			Token:          "new-hash",
+			Name:           "new-key",
 			AllowedDomains: []string{"updated-domain.com"},
 			Admin:          true,
 		}
@@ -607,7 +628,7 @@ func TestControlPlaneAPI(t *testing.T) {
 
 		loadedCfg := config.Load()
 		for _, k := range loadedCfg.APIKeys {
-			if k.Token == "new-hash" {
+			if k.Name == "new-key" {
 				if !k.Admin || len(k.AllowedDomains) != 1 || k.AllowedDomains[0] != "updated-domain.com" {
 					t.Errorf("Expected updated key settings, got: %+v", k)
 				}
@@ -616,7 +637,7 @@ func TestControlPlaneAPI(t *testing.T) {
 	})
 
 	t.Run("DELETE API Key Configuration - Success", func(t *testing.T) {
-		req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/config/api_keys?token=new-hash", nil)
+		req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/config/api_keys?name=new-key", nil)
 		req.Header.Set("Authorization", adminHeader)
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {

@@ -16,6 +16,7 @@ type CertConfig struct {
 
 // APIKeyConfig defines token to domain mapping.
 type APIKeyConfig struct {
+	Name           string   `json:"name"`
 	Token          string   `json:"token"`
 	AllowedDomains []string `json:"allowed_domains"`
 	Admin          bool     `json:"admin"`

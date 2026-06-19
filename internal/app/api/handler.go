@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -382,15 +384,15 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if payload.Token == "" {
-		respondWithError(w, http.StatusBadRequest, "token is required")
+	if payload.Name == "" {
+		respondWithError(w, http.StatusBadRequest, "name is required")
 		return
 	}
 
 	s.mu.Lock()
 	exists := false
 	for _, k := range s.cfg.APIKeys {
-		if k.Token == payload.Token {
+		if k.Name == payload.Name {
 			exists = true
 			break
 		}
@@ -402,6 +404,21 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Generate 32-byte secure token (64 hex characters)
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to generate random token")
+		return
+	}
+	cleartextToken := hex.EncodeToString(bytes)
+
+	hash, err := GenerateArgon2idHash(cleartextToken)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to hash token")
+		return
+	}
+	payload.Token = hash
+
 	s.mu.Lock()
 	s.cfg.APIKeys = append(s.cfg.APIKeys, payload)
 	s.mu.Unlock()
@@ -411,7 +428,23 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	respondWithJSON(w, http.StatusCreated, payload)
+	type APIKeyResponse struct {
+		Name           string   `json:"name"`
+		Token          string   `json:"token"`
+		CleartextToken string   `json:"cleartext_token"`
+		AllowedDomains []string `json:"allowed_domains"`
+		Admin          bool     `json:"admin"`
+	}
+
+	resp := APIKeyResponse{
+		Name:           payload.Name,
+		Token:          payload.Token,
+		CleartextToken: cleartextToken,
+		AllowedDomains: payload.AllowedDomains,
+		Admin:          payload.Admin,
+	}
+
+	respondWithJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
@@ -420,15 +453,15 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 		respondWithError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if payload.Token == "" {
-		respondWithError(w, http.StatusBadRequest, "token is required")
+	if payload.Name == "" {
+		respondWithError(w, http.StatusBadRequest, "name is required")
 		return
 	}
 
 	s.mu.Lock()
 	foundIdx := -1
 	for idx, k := range s.cfg.APIKeys {
-		if k.Token == payload.Token {
+		if k.Name == payload.Name {
 			foundIdx = idx
 			break
 		}
@@ -453,16 +486,16 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleDeleteConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		respondWithError(w, http.StatusBadRequest, "token query parameter is required")
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		respondWithError(w, http.StatusBadRequest, "name query parameter is required")
 		return
 	}
 
 	s.mu.Lock()
 	foundIdx := -1
 	for idx, k := range s.cfg.APIKeys {
-		if k.Token == token {
+		if k.Name == name {
 			foundIdx = idx
 			break
 		}

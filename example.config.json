@@ -16,6 +16,7 @@
   ],
   "api_keys": [
     {
+      "name": "example-key",
       "token": "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs",
       "allowed_domains": [
         "example.com"

@@ -90,6 +90,7 @@ cp example.config.json config.json
   ],
   "api_keys": [
     {
+      "name": "example-key",
       "token": "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs",
       "allowed_domains": ["example.com"]
     }
@@ -115,7 +116,7 @@ cp example.config.json config.json
 | `renew_threshold_days` | int | `30` | `RENEW_THRESHOLD_DAYS` | Days before expiry to trigger automatic renewal |
 | `check_interval_hours` | int | `24` | `CHECK_INTERVAL_HOURS` | Hours between checking local certificate status |
 | `certificates` | list | *None* | *None* | Target certificates (primary domain and SANs) |
-| `api_keys` | list | *None* | *None* | Authorized API keys (Argon2id hashes) and allowed domains |
+| `api_keys` | list | *None* | *None* | Authorized API keys (unique name, Argon2id hash of token, and allowed domains) |
 
 ### ACME Provider Configuration
 
