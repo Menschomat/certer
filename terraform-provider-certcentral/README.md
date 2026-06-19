@@ -11,19 +11,60 @@ The Cert-Central Terraform provider allows you to manage SSL/TLS certificate con
 
 ---
 
-## Provider Configuration
+## Provider Configuration & Private Registries
 
-To use the provider, configure it with the HTTP address of your `cert-central` daemon and an administrative token:
+Since you do not need a `terraform.io` account, you can use the provider through either a **Gitea Private Registry** or a **Local Plugin Directory**.
+
+### Option A: Gitea Package Registry (Recommended)
+Gitea has a built-in, Terraform-compliant package registry. You can publish your provider to Gitea and configure Terraform to pull it from your instance:
 
 ```hcl
 terraform {
   required_providers {
     certcentral = {
-      source = "registry.terraform.io/menscho/certcentral"
+      source  = "gitea.dmz.k8s.menscho.space/m0space/certcentral"
+      version = "~> 1.0.0"
     }
   }
 }
 
+provider "certcentral" {
+  address = "http://localhost:8080"
+  token   = "your_admin_api_token"
+}
+```
+
+*Note: Gitea automatically handles Terraform service discovery under the hood at your domain's `.well-known/terraform.json` endpoint.*
+
+### Option B: Local Plugin Installation
+For offline use or local development, you can compile the provider and place it directly into your local Terraform plugin directory:
+
+1. Build and copy the binary to your local plugin mirror directory (adjusting architecture name as needed):
+   ```bash
+   cd terraform-provider-certcentral
+   go build -o terraform-provider-certcentral
+   
+   # For macOS (Apple Silicon):
+   mkdir -p ~/.terraform.d/plugins/gitea.dmz.k8s.menscho.space/m0space/certcentral/1.0.0/darwin_arm64/
+   cp terraform-provider-certcentral ~/.terraform.d/plugins/gitea.dmz.k8s.menscho.space/m0space/certcentral/1.0.0/darwin_arm64/terraform-provider-certcentral_v1.0.0
+   ```
+
+2. Reference your local source in your Terraform configuration:
+   ```hcl
+   terraform {
+     required_providers {
+       certcentral = {
+         source  = "gitea.dmz.k8s.menscho.space/m0space/certcentral"
+         version = "1.0.0"
+       }
+     }
+   }
+   ```
+   When running `terraform init`, it will resolve the provider directly from your local cache directory.
+
+For either option, you must configure the provider block with your `cert-central` endpoint and admin API key:
+
+```hcl
 provider "certcentral" {
   address = "http://localhost:8080"
   token   = "your_admin_api_token"
