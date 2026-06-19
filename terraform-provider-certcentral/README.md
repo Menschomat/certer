@@ -16,8 +16,7 @@ The Cert-Central Terraform provider allows you to manage SSL/TLS certificate con
 Since you do not need a `terraform.io` account, you can use the provider through either a **Gitea Private Registry** or a **Local Plugin Directory**.
 
 ### Option A: Gitea Package Registry (Recommended)
-Gitea has a built-in, Terraform-compliant package registry. You can publish your provider to Gitea and configure Terraform to pull it from your instance:
-
+Gitea has a built-in, Terraform-compliant package registry. When you write:
 ```hcl
 terraform {
   required_providers {
@@ -27,12 +26,22 @@ terraform {
     }
   }
 }
-
-provider "certcentral" {
-  address = "http://localhost:8080"
-  token   = "your_admin_api_token"
-}
 ```
+Terraform resolves this by contacting `gitea.dmz.k8s.menscho.space` to download the pre-compiled binary matching your platform (e.g., `linux_amd64` or `darwin_arm64`). It does not read your Git repository or subdirectories directly.
+
+To publish your compiled provider to Gitea's registry:
+1. Compile and zip the provider binary:
+   ```bash
+   cd terraform-provider-certcentral
+   go build -o terraform-provider-certcentral
+   zip terraform-provider-certcentral_1.0.0_darwin_arm64.zip terraform-provider-certcentral
+   ```
+2. Upload it to your Gitea instance using `curl` (replace `YOUR_TOKEN` with a Gitea personal access token):
+   ```bash
+   curl --header "Authorization: token YOUR_TOKEN" \
+        --upload-file terraform-provider-certcentral_1.0.0_darwin_arm64.zip \
+        https://gitea.dmz.k8s.menscho.space/api/packages/m0space/terraform-provider/certcentral/1.0.0/darwin_arm64.zip
+   ```
 
 *Note: Gitea automatically handles Terraform service discovery under the hood at your domain's `.well-known/terraform.json` endpoint.*
 
