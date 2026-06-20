@@ -8,14 +8,15 @@ This file provides system context, architectural constraints, and development gu
 
 - `cmd/server/main.go`: Daemon bootstrap. Configures structured logger, parses config, registers background scheduler, and starts API server.
 - `cmd/keygen/main.go`: Independent command line tool used to generate secure API tokens and their Argon2id hashes.
-- `internal/app/config/config.go`: Configuration loader supporting JSON configs (`config.json`) and environment variable fallbacks.
+- `internal/app/config/config.go`: Configuration models and loader. Supports defaults, JSON configs (`config.json`), environment overrides, and auto-generates missing UUIDs on startup.
 - `internal/app/cert/`: Core certificate automation logic.
   - `user.go`: Implements Lego's `registration.User` interface.
   - `issuer.go`: ACME communication wrapper. Implements `CertificateIssuer` interface. Handles DNS-01/HTTP-01 solvers.
-  - `scheduler.go`: Expiration checking and configuration monitoring loops.
+  - `scheduler.go`: Expiration checking, private key existence verification, and configuration monitoring loops.
 - `internal/app/api/`: REST routing and token hashing.
-  - `handler.go`: HTTP handler logic. Exposes authenticated endpoint for sharing certificate PEM payloads.
+  - `handler.go`: HTTP handler logic. Imposes table-driven routing, generic CRUD decoders/filters, context helpers, and authentication/scoping middleware.
   - `auth.go`: Argon2id verification and hash generation helpers.
+- `openapi.json`: OpenAPI v3 specification file mapping all client and control plane APIs.
 
 ---
 
@@ -24,19 +25,19 @@ This file provides system context, architectural constraints, and development gu
 ```mermaid
 graph TD
     subgraph Storage
-        Certs[./certs/*.crt, *.key]
+        Certs["./certs/{id}.crt, {id}.key"]
     end
     subgraph Config
         JSON[config.json]
     end
     subgraph Background Worker
-        Sched[cert.Scheduler] -->|Check Expires / Changes| Issuer[cert.Issuer]
+        Sched[cert.Scheduler] -->|Check Expires / Keys / SANs| Issuer[cert.Issuer]
         Issuer -->|DNS-01 Challenge| ACME[ACME CA / Pebble / Let's Encrypt]
         ACME -->|Writes PEMs| Certs
     end
     subgraph Web Server
         API[api.Server] -->|GET /api/v1/certificates| Auth{Argon2id Auth}
-        Auth -->|Pass| Filter[Filter Allowed Domains]
+        Auth -->|Pass| Filter[Filter Allowed Domains & Teams]
         Filter -->|Reads| Certs
         Filter -->|JSON Response| Client[REST Client]
     end
@@ -52,7 +53,7 @@ graph TD
 1. **Test-Driven Development (TDD)**:
    - Always write tests first.
    - Mock external dependencies. Do not make network calls to real CAs or require external DNS configurations during test execution.
-   - Use `crypto/x509` in tests to construct self-signed x509 certificates to validate expiry and domain names check logic.
+   - Use `crypto/x509` in tests to construct self-signed x509 certificates to validate expiry, private keys, and domain names check logic.
 
 2. **Security & Cryptography**:
    - **No Plain-text Tokens**: Never store token credentials in configuration files.
@@ -63,11 +64,18 @@ graph TD
      - Salt: Random 16-byte cryptographically secure (`crypto/rand`).
    - Constant-time verification (`crypto/subtle.ConstantTimeCompare`) must be enforced.
 
-3. **Routing Guidelines**:
-   - Use Go 1.22+ native routing rules on `http.ServeMux` (e.g. `GET /path`, `POST /path`).
+3. **Routing & Handler Guidelines**:
+   - Use Go 1.22+ native routing rules on `http.ServeMux` (e.g. `PUT /api/v1/config/certificates/{id}`).
    - Avoid introducing external router frameworks.
+   - **Table-Driven Routing**: Define and register all routes using the table-driven pattern in `Routes()` for unified middleware application and clarity.
+   - **Generic CRUD Helpers**: Use generic slice and decoding helpers (`decodeBody`, `findByID`, `removeAtIndex`) to handle JSON parsing and item mutations inside handler methods.
 
-4. **Structured Logging**:
+4. **Identities & Referential Integrity**:
+   - **UUIDv7**: Configuration entries (Certificates, API Keys, and Teams) are identified exclusively by server-generated UUID v7 strings.
+   - **Referential Integrity**: Before deleting a Team configuration, handlers must verify it is not in use by any configured certificates (`team_id`) or API keys (`allowed_teams`). Return `400 Bad Request` if a reference exists.
+   - **Type-safe Context Access**: Never use unchecked type assertions like `r.Context().Value(Key).([]string)` directly inside route handlers. Always wrap context claims retrieval in helper functions (`allowedDomainsFromContext`, `allowedTeamsFromContext`).
+
+5. **Structured Logging**:
    - Use structured logs (`log/slog`) with key-value descriptors.
    - Print human-readable operational events but avoid dumping raw certificate strings or private keys to stdout.
 
