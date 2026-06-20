@@ -674,3 +674,108 @@ func TestStaticResourceProtection_Certificates(t *testing.T) {
 		}
 	})
 }
+
+func TestAdmin_FetchCertificates(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t, "api-admin-fetch-*")
+	defer cleanup()
+
+	hashedRootAdmin, _ := GenerateArgon2idHash("root-admin-token")
+	hashedScopedAdmin, _ := GenerateArgon2idHash("scoped-admin-token")
+
+	initialConfig := &config.Config{
+		APIKeys: []config.APIKeyConfig{
+			{
+				ID:           "root-admin-id",
+				Token:        hashedRootAdmin,
+				AllowedTeams: []string{}, // Root Admin
+				Admin:        true,
+			},
+			{
+				ID:           "scoped-admin-id",
+				Token:        hashedScopedAdmin,
+				AllowedTeams: []string{"team-id-1"}, // Scoped Admin
+				Admin:        true,
+			},
+		},
+		Certificates: []config.CertConfig{
+			{
+				ID:      "cert-team-1",
+				Primary: "team1.com",
+				TeamID:  "team-id-1",
+			},
+			{
+				ID:      "cert-team-2",
+				Primary: "team2.com",
+				TeamID:  "team-id-2",
+			},
+		},
+	}
+	if err := initialConfig.Save(os.Getenv("CONFIG_PATH")); err != nil {
+		t.Fatalf("Failed to save initial config: %v", err)
+	}
+
+	// Write mock cert files
+	for _, cc := range initialConfig.Certificates {
+		if err := os.WriteFile(filepath.Join(tmpDir, cc.ID+".crt"), []byte("cert-for-"+cc.Primary), 0644); err != nil {
+			t.Fatalf("Failed to write mock cert file: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, cc.ID+".key"), []byte("key-for-"+cc.Primary), 0644); err != nil {
+			t.Fatalf("Failed to write mock key file: %v", err)
+		}
+	}
+
+	cfg := config.Load()
+	server := NewServer(tmpDir, cfg, nil)
+	ts := httptest.NewServer(server.Routes())
+	defer ts.Close()
+
+	t.Run("Root Admin - Fetch All", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates", nil)
+		req.Header.Set("Authorization", "Bearer root-admin-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
+		}
+
+		var certs []CertificateResponse
+		if err := json.NewDecoder(res.Body).Decode(&certs); err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+
+		if len(certs) != 2 {
+			t.Fatalf("Expected exactly 2 certificates, got %d", len(certs))
+		}
+	})
+
+	t.Run("Scoped Admin - Fetch Scoped Only", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates", nil)
+		req.Header.Set("Authorization", "Bearer scoped-admin-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
+		}
+
+		var certs []CertificateResponse
+		if err := json.NewDecoder(res.Body).Decode(&certs); err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+
+		if len(certs) != 1 {
+			t.Fatalf("Expected exactly 1 certificate, got %d", len(certs))
+		}
+		if certs[0].ID != "cert-team-1" {
+			t.Errorf("Expected cert-team-1, got %q", certs[0].ID)
+		}
+	})
+}
+

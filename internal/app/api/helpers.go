@@ -12,6 +12,7 @@ type contextKey string
 
 const allowedDomainsKey contextKey = "allowed_domains"
 const allowedTeamsKey contextKey = "allowed_teams"
+const isAdminKey contextKey = "is_admin"
 
 func allowedDomainsFromContext(ctx context.Context) []string {
 	if val, ok := ctx.Value(allowedDomainsKey).([]string); ok && val != nil {
@@ -25,6 +26,13 @@ func allowedTeamsFromContext(ctx context.Context) []string {
 		return val
 	}
 	return []string{}
+}
+
+func isAdminFromContext(ctx context.Context) bool {
+	if val, ok := ctx.Value(isAdminKey).(bool); ok {
+		return val
+	}
+	return false
 }
 
 func isTeamAllowed(teamID string, allowedTeams []string) bool {

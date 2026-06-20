@@ -32,19 +32,29 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 	copy(certs, allCerts)
 	s.mu.RUnlock()
 
+	isAdmin := isAdminFromContext(r.Context())
+
 	for _, cc := range certs {
 		if cc.Primary == "" {
 			continue
 		}
 
-		// Only return certificates for domains authorized by the token
-		if !isDomainAllowed(cc.Primary, allowedDomains) {
-			continue
-		}
+		if !isAdmin {
+			// Only return certificates for domains authorized by the token
+			if !isDomainAllowed(cc.Primary, allowedDomains) {
+				continue
+			}
 
-		// Only return certificates for teams authorized by the token
-		if !isTeamAllowed(cc.TeamID, allowedTeams) {
-			continue
+			// Only return certificates for teams authorized by the token
+			if !isTeamAllowed(cc.TeamID, allowedTeams) {
+				continue
+			}
+		} else {
+			// Admin Token:
+			// Scoped Admin is restricted to allowed teams. Root Admin (empty allowedTeams) has access to all.
+			if len(allowedTeams) > 0 && !isTeamAllowed(cc.TeamID, allowedTeams) {
+				continue
+			}
 		}
 
 		certPath := filepath.Join(s.storageDir, cc.ID+".crt")

@@ -129,11 +129,12 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 		}
 
 		isConfigPath := strings.HasPrefix(r.URL.Path, "/api/v1/config")
+		isCertRetrieval := r.Method == "GET" && r.URL.Path == "/api/v1/certificates"
 
 		if matchedKey.Admin {
-			if !isConfigPath {
-				slog.Warn("Forbidden access attempt: admin token tried to access non-config route", "remote_addr", r.RemoteAddr, "path", r.URL.Path)
-				respondWithError(w, http.StatusForbidden, "admin tokens are restricted to config APIs only")
+			if !isConfigPath && !isCertRetrieval {
+				slog.Warn("Forbidden access attempt: admin token tried to access restricted route", "remote_addr", r.RemoteAddr, "path", r.URL.Path)
+				respondWithError(w, http.StatusForbidden, "admin tokens are restricted to config APIs and certificate retrieval only")
 				return
 			}
 		} else {
@@ -155,6 +156,7 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 
 		ctx := context.WithValue(r.Context(), allowedDomainsKey, allowedDomains)
 		ctx = context.WithValue(ctx, allowedTeamsKey, allowedTeams)
+		ctx = context.WithValue(ctx, isAdminKey, matchedKey.Admin)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

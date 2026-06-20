@@ -104,11 +104,11 @@ func TestAuthentication_Roles(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:           "Admin token accessing certs - Forbidden",
+			name:           "Admin token accessing certs - Allowed",
 			token:          "admin-token",
 			path:           "/api/v1/certificates",
 			method:         "GET",
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusOK,
 		},
 		{
 			name:           "No token accessing config - Unauthorized",
