@@ -71,6 +71,7 @@ type HelloResponse struct {
 
 // CertificateResponse represents the JSON schema for sharing certificates.
 type CertificateResponse struct {
+	ID           string   `json:"id"`
 	Domain       string   `json:"domain"`
 	Sans         []string `json:"sans"`
 	Issued       bool     `json:"issued"`
@@ -177,6 +178,7 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 		keyPath := filepath.Join(s.storageDir, cc.ID+".key")
 
 		resp := CertificateResponse{
+			ID:           cc.ID,
 			Domain:       cc.Primary,
 			Sans:         cc.Sans,
 			Issued:       false,
