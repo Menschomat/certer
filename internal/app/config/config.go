@@ -10,11 +10,19 @@ import (
 	"github.com/google/uuid"
 )
 
+// TeamConfig configures first-class team metadata.
+type TeamConfig struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 // CertConfig configures primary domain and its SANs.
 type CertConfig struct {
 	ID          string   `json:"id"`
 	Primary     string   `json:"primary"`
 	Sans        []string `json:"sans"`
+	TeamID      string   `json:"team_id"`
 	Description string   `json:"description"`
 }
 
@@ -24,6 +32,7 @@ type APIKeyConfig struct {
 	Token          string   `json:"token"`
 	Description    string   `json:"description"`
 	AllowedDomains []string `json:"allowed_domains"`
+	AllowedTeams   []string `json:"allowed_teams"`
 	Admin          bool     `json:"admin"`
 }
 
@@ -44,6 +53,7 @@ type Config struct {
 	RenewThresholdDays int            `json:"renew_threshold_days"`
 	CheckIntervalHours int            `json:"check_interval_hours"`
 	APIKeys            []APIKeyConfig `json:"api_keys"`
+	Teams              []TeamConfig   `json:"teams"`
 }
 
 // Load loads configuration from environment variables with defaults.
@@ -113,6 +123,9 @@ func Load() *Config {
 			if len(jsonCfg.APIKeys) > 0 {
 				cfg.APIKeys = jsonCfg.APIKeys
 			}
+			if len(jsonCfg.Teams) > 0 {
+				cfg.Teams = jsonCfg.Teams
+			}
 		} else {
 			slog.Error("Failed to unmarshal config JSON", "path", configPath, "error", err)
 		}
@@ -181,6 +194,14 @@ func Load() *Config {
 		if cfg.APIKeys[i].ID == "" {
 			if id, err := uuid.NewV7(); err == nil {
 				cfg.APIKeys[i].ID = id.String()
+				dirty = true
+			}
+		}
+	}
+	for i := range cfg.Teams {
+		if cfg.Teams[i].ID == "" {
+			if id, err := uuid.NewV7(); err == nil {
+				cfg.Teams[i].ID = id.String()
 				dirty = true
 			}
 		}

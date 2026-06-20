@@ -39,14 +39,23 @@ func TestLoadConfig(t *testing.T) {
 			{
 				"id": "019035a1-7b00-7521-8280-60b6adbf47eb",
 				"primary": "example.com",
-				"sans": ["*.example.com", "www.example.com"]
+				"sans": ["*.example.com", "www.example.com"],
+				"team_id": "019035a1-7b00-7521-8280-60b6adbf47ed"
 			}
 		],
 		"api_keys": [
 			{
 				"id": "019035a1-7b00-7521-8280-60b6adbf47ec",
 				"token": "blabliblub",
-				"allowed_domains": ["menscho.space", "weihrauchphoto.de"]
+				"allowed_domains": ["menscho.space", "weihrauchphoto.de"],
+				"allowed_teams": ["019035a1-7b00-7521-8280-60b6adbf47ed"]
+			}
+		],
+		"teams": [
+			{
+				"id": "019035a1-7b00-7521-8280-60b6adbf47ed",
+				"name": "Dev Team",
+				"description": "Development environment"
 			}
 		]
 	}`
@@ -84,6 +93,7 @@ func TestLoadConfig(t *testing.T) {
 			ID:      "019035a1-7b00-7521-8280-60b6adbf47eb",
 			Primary: "example.com",
 			Sans:    []string{"*.example.com", "www.example.com"},
+			TeamID:  "019035a1-7b00-7521-8280-60b6adbf47ed",
 		},
 	}
 	if !reflect.DeepEqual(cfg.Certificates, expectedCerts) {
@@ -95,10 +105,22 @@ func TestLoadConfig(t *testing.T) {
 			ID:             "019035a1-7b00-7521-8280-60b6adbf47ec",
 			Token:          "blabliblub",
 			AllowedDomains: []string{"menscho.space", "weihrauchphoto.de"},
+			AllowedTeams:   []string{"019035a1-7b00-7521-8280-60b6adbf47ed"},
 		},
 	}
 	if !reflect.DeepEqual(cfg.APIKeys, expectedAPIKeys) {
 		t.Errorf("Expected APIKeys %+v, got %+v", expectedAPIKeys, cfg.APIKeys)
+	}
+
+	expectedTeams := []TeamConfig{
+		{
+			ID:          "019035a1-7b00-7521-8280-60b6adbf47ed",
+			Name:        "Dev Team",
+			Description: "Development environment",
+		},
+	}
+	if !reflect.DeepEqual(cfg.Teams, expectedTeams) {
+		t.Errorf("Expected Teams %+v, got %+v", expectedTeams, cfg.Teams)
 	}
 }
 
@@ -334,6 +356,7 @@ func TestSaveConfig(t *testing.T) {
 				ID:      "019035a1-7b00-7521-8280-60b6adbf47eb",
 				Primary: "example.com",
 				Sans:    []string{"*.example.com"},
+				TeamID:  "019035a1-7b00-7521-8280-60b6adbf47ed",
 			},
 		},
 		APIKeys: []APIKeyConfig{
@@ -341,7 +364,15 @@ func TestSaveConfig(t *testing.T) {
 				ID:             "019035a1-7b00-7521-8280-60b6adbf47ec",
 				Token:          "hashed-token",
 				AllowedDomains: []string{"example.com"},
+				AllowedTeams:   []string{"019035a1-7b00-7521-8280-60b6adbf47ed"},
 				Admin:          true,
+			},
+		},
+		Teams: []TeamConfig{
+			{
+				ID:          "019035a1-7b00-7521-8280-60b6adbf47ed",
+				Name:        "Dev Team",
+				Description: "Development environment",
 			},
 		},
 	}
@@ -368,6 +399,9 @@ func TestSaveConfig(t *testing.T) {
 	if !reflect.DeepEqual(loadedCfg.APIKeys, cfg.APIKeys) {
 		t.Errorf("Expected APIKeys %+v, got %+v", cfg.APIKeys, loadedCfg.APIKeys)
 	}
+	if !reflect.DeepEqual(loadedCfg.Teams, cfg.Teams) {
+		t.Errorf("Expected Teams %+v, got %+v", cfg.Teams, loadedCfg.Teams)
+	}
 }
 
 func TestLoadConfig_AutoGenerateIDs(t *testing.T) {
@@ -382,6 +416,12 @@ func TestLoadConfig_AutoGenerateIDs(t *testing.T) {
 			{
 				"token": "secret-token",
 				"allowed_domains": ["auto-gen.com"]
+			}
+		],
+		"teams": [
+			{
+				"name": "Auto Gen Team",
+				"description": "Auto Gen Description"
 			}
 		]
 	}`
@@ -398,9 +438,13 @@ func TestLoadConfig_AutoGenerateIDs(t *testing.T) {
 	if len(cfg.APIKeys) != 1 || cfg.APIKeys[0].ID == "" {
 		t.Errorf("Expected auto-generated API Key ID, got empty")
 	}
+	if len(cfg.Teams) != 1 || cfg.Teams[0].ID == "" {
+		t.Errorf("Expected auto-generated Team ID, got empty")
+	}
 
 	certID := cfg.Certificates[0].ID
 	apiKeyID := cfg.APIKeys[0].ID
+	teamID := cfg.Teams[0].ID
 
 	// Verify that the file on disk was updated and contains the generated IDs
 	cfgReloaded := Load()
@@ -409,6 +453,9 @@ func TestLoadConfig_AutoGenerateIDs(t *testing.T) {
 	}
 	if cfgReloaded.APIKeys[0].ID != apiKeyID {
 		t.Errorf("Expected reloaded API Key ID %q, got %q", apiKeyID, cfgReloaded.APIKeys[0].ID)
+	}
+	if cfgReloaded.Teams[0].ID != teamID {
+		t.Errorf("Expected reloaded Team ID %q, got %q", teamID, cfgReloaded.Teams[0].ID)
 	}
 }
 

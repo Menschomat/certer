@@ -18,6 +18,7 @@ import (
 type contextKey string
 
 const allowedDomainsKey contextKey = "allowed_domains"
+const allowedTeamsKey contextKey = "allowed_teams"
 
 // ConfigReloader defines the interface to reload scheduler configuration.
 type ConfigReloader interface {
@@ -60,6 +61,12 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handlePostConfigAPIKeys)))
 	mux.Handle("PUT /api/v1/config/api_keys/{id}", s.Authenticate(http.HandlerFunc(s.handlePutConfigAPIKeys)))
 	mux.Handle("DELETE /api/v1/config/api_keys/{id}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigAPIKeys)))
+
+	// Control plane APIs (Teams)
+	mux.Handle("GET /api/v1/config/teams", s.Authenticate(http.HandlerFunc(s.handleGetConfigTeams)))
+	mux.Handle("POST /api/v1/config/teams", s.Authenticate(http.HandlerFunc(s.handlePostConfigTeams)))
+	mux.Handle("PUT /api/v1/config/teams/{id}", s.Authenticate(http.HandlerFunc(s.handlePutConfigTeams)))
+	mux.Handle("DELETE /api/v1/config/teams/{id}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigTeams)))
 
 	return mux
 }
@@ -145,13 +152,28 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 			}
 		}
 
-		ctx := context.WithValue(r.Context(), allowedDomainsKey, matchedKey.AllowedDomains)
+		allowedDomains := matchedKey.AllowedDomains
+		if allowedDomains == nil {
+			allowedDomains = []string{}
+		}
+		allowedTeams := matchedKey.AllowedTeams
+		if allowedTeams == nil {
+			allowedTeams = []string{}
+		}
+
+		ctx := context.WithValue(r.Context(), allowedDomainsKey, allowedDomains)
+		ctx = context.WithValue(ctx, allowedTeamsKey, allowedTeams)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 	allowedDomains, ok := r.Context().Value(allowedDomainsKey).([]string)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "failed to parse authorization context")
+		return
+	}
+	allowedTeams, ok := r.Context().Value(allowedTeamsKey).([]string)
 	if !ok {
 		respondWithError(w, http.StatusInternalServerError, "failed to parse authorization context")
 		return
@@ -171,6 +193,11 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 
 		// Only return certificates for domains authorized by the token
 		if !isDomainAllowed(cc.Primary, allowedDomains) {
+			continue
+		}
+
+		// Only return certificates for teams authorized by the token
+		if !isTeamAllowed(cc.TeamID, allowedTeams) {
 			continue
 		}
 
@@ -198,6 +225,18 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, respList)
+}
+
+func isTeamAllowed(teamID string, allowedTeams []string) bool {
+	if teamID == "" && len(allowedTeams) == 0 {
+		return true
+	}
+	for _, t := range allowedTeams {
+		if t == teamID {
+			return true
+		}
+	}
+	return false
 }
 
 func isDomainAllowed(domain string, allowed []string) bool {
@@ -271,6 +310,13 @@ func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Req
 		respondWithError(w, http.StatusBadRequest, "primary domain is required")
 		return
 	}
+	s.mu.RLock()
+	validTeam := isValidTeam(s.cfg, payload.TeamID)
+	s.mu.RUnlock()
+	if !validTeam {
+		respondWithError(w, http.StatusBadRequest, "invalid or missing team_id")
+		return
+	}
 
 	uuidStr, err := GenerateUUIDv7()
 	if err != nil {
@@ -303,6 +349,13 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	s.mu.RLock()
+	validTeam := isValidTeam(s.cfg, payload.TeamID)
+	s.mu.RUnlock()
+	if !validTeam {
+		respondWithError(w, http.StatusBadRequest, "invalid or missing team_id")
+		return
+	}
 
 	s.mu.Lock()
 	foundIdx := -1
@@ -321,6 +374,7 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 
 	s.cfg.Certificates[foundIdx].Primary = payload.Primary
 	s.cfg.Certificates[foundIdx].Sans = payload.Sans
+	s.cfg.Certificates[foundIdx].TeamID = payload.TeamID
 	s.cfg.Certificates[foundIdx].Description = payload.Description
 	s.mu.Unlock()
 
@@ -380,6 +434,13 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	s.mu.RLock()
+	validTeams := areTeamsValid(s.cfg, payload.AllowedTeams)
+	s.mu.RUnlock()
+	if !validTeams {
+		respondWithError(w, http.StatusBadRequest, "one or more allowed_teams are invalid")
+		return
+	}
 
 	uuidStr, err := GenerateUUIDv7()
 	if err != nil {
@@ -418,6 +479,7 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 		CleartextToken string   `json:"cleartext_token"`
 		Description    string   `json:"description"`
 		AllowedDomains []string `json:"allowed_domains"`
+		AllowedTeams   []string `json:"allowed_teams"`
 		Admin          bool     `json:"admin"`
 	}
 
@@ -427,6 +489,7 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 		CleartextToken: cleartextToken,
 		Description:    payload.Description,
 		AllowedDomains: payload.AllowedDomains,
+		AllowedTeams:   payload.AllowedTeams,
 		Admin:          payload.Admin,
 	}
 
@@ -443,6 +506,13 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 	var payload config.APIKeyConfig
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		respondWithError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	s.mu.RLock()
+	validTeams := areTeamsValid(s.cfg, payload.AllowedTeams)
+	s.mu.RUnlock()
+	if !validTeams {
+		respondWithError(w, http.StatusBadRequest, "one or more allowed_teams are invalid")
 		return
 	}
 
@@ -462,6 +532,7 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 	}
 
 	s.cfg.APIKeys[foundIdx].AllowedDomains = payload.AllowedDomains
+	s.cfg.APIKeys[foundIdx].AllowedTeams = payload.AllowedTeams
 	s.cfg.APIKeys[foundIdx].Admin = payload.Admin
 	s.cfg.APIKeys[foundIdx].Description = payload.Description
 	s.mu.Unlock()
@@ -497,6 +568,139 @@ func (s *Server) handleDeleteConfigAPIKeys(w http.ResponseWriter, r *http.Reques
 	}
 
 	s.cfg.APIKeys = append(s.cfg.APIKeys[:foundIdx], s.cfg.APIKeys[foundIdx+1:]...)
+	s.mu.Unlock()
+
+	if err := s.saveAndReload(r.Context()); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func isValidTeam(cfg *config.Config, teamID string) bool {
+	if teamID == "" {
+		return false
+	}
+	for _, t := range cfg.Teams {
+		if t.ID == teamID {
+			return true
+		}
+	}
+	return false
+}
+
+func areTeamsValid(cfg *config.Config, teamIDs []string) bool {
+	for _, teamID := range teamIDs {
+		if !isValidTeam(cfg, teamID) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) handleGetConfigTeams(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	teams := make([]config.TeamConfig, len(s.cfg.Teams))
+	copy(teams, s.cfg.Teams)
+	s.mu.RUnlock()
+
+	respondWithJSON(w, http.StatusOK, teams)
+}
+
+func (s *Server) handlePostConfigTeams(w http.ResponseWriter, r *http.Request) {
+	var payload config.TeamConfig
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if payload.Name == "" {
+		respondWithError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	uuidStr, err := GenerateUUIDv7()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to generate ID")
+		return
+	}
+	payload.ID = uuidStr
+
+	s.mu.Lock()
+	s.cfg.Teams = append(s.cfg.Teams, payload)
+	s.mu.Unlock()
+
+	if err := s.saveAndReload(r.Context()); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, payload)
+}
+
+func (s *Server) handlePutConfigTeams(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondWithError(w, http.StatusBadRequest, "id parameter is required")
+		return
+	}
+
+	var payload config.TeamConfig
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	s.mu.Lock()
+	foundIdx := -1
+	for idx, t := range s.cfg.Teams {
+		if t.ID == id {
+			foundIdx = idx
+			break
+		}
+	}
+
+	if foundIdx == -1 {
+		s.mu.Unlock()
+		respondWithError(w, http.StatusNotFound, "team configuration not found")
+		return
+	}
+
+	s.cfg.Teams[foundIdx].Name = payload.Name
+	s.cfg.Teams[foundIdx].Description = payload.Description
+	s.mu.Unlock()
+
+	if err := s.saveAndReload(r.Context()); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleDeleteConfigTeams(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondWithError(w, http.StatusBadRequest, "id parameter is required")
+		return
+	}
+
+	s.mu.Lock()
+	foundIdx := -1
+	for idx, t := range s.cfg.Teams {
+		if t.ID == id {
+			foundIdx = idx
+			break
+		}
+	}
+
+	if foundIdx == -1 {
+		s.mu.Unlock()
+		respondWithError(w, http.StatusNotFound, "team configuration not found")
+		return
+	}
+
+	s.cfg.Teams = append(s.cfg.Teams[:foundIdx], s.cfg.Teams[foundIdx+1:]...)
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
