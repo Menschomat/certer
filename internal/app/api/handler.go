@@ -60,27 +60,39 @@ func NewServer(storageDir string, cfg *config.Config, reloader ConfigReloader) *
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /health", s.handleHealth)
-	mux.HandleFunc("GET /api/v1/hello", s.handleHello)
-	mux.Handle("GET /api/v1/certificates", s.Authenticate(http.HandlerFunc(s.handleGetCertificates)))
+	routes := []struct {
+		pattern string
+		handler http.Handler
+	}{
+		// Public Endpoints
+		{"GET /health", http.HandlerFunc(s.handleHealth)},
+		{"GET /api/v1/hello", http.HandlerFunc(s.handleHello)},
 
-	// Control plane APIs (Certificates)
-	mux.Handle("GET /api/v1/config/certificates", s.Authenticate(http.HandlerFunc(s.handleGetConfigCertificates)))
-	mux.Handle("POST /api/v1/config/certificates", s.Authenticate(http.HandlerFunc(s.handlePostConfigCertificates)))
-	mux.Handle("PUT /api/v1/config/certificates/{id}", s.Authenticate(http.HandlerFunc(s.handlePutConfigCertificates)))
-	mux.Handle("DELETE /api/v1/config/certificates/{id}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigCertificates)))
+		// Scoped Certificates API
+		{"GET /api/v1/certificates", s.Authenticate(http.HandlerFunc(s.handleGetCertificates))},
 
-	// Control plane APIs (API Keys)
-	mux.Handle("GET /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handleGetConfigAPIKeys)))
-	mux.Handle("POST /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handlePostConfigAPIKeys)))
-	mux.Handle("PUT /api/v1/config/api_keys/{id}", s.Authenticate(http.HandlerFunc(s.handlePutConfigAPIKeys)))
-	mux.Handle("DELETE /api/v1/config/api_keys/{id}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigAPIKeys)))
+		// Control plane APIs (Certificates)
+		{"GET /api/v1/config/certificates", s.Authenticate(http.HandlerFunc(s.handleGetConfigCertificates))},
+		{"POST /api/v1/config/certificates", s.Authenticate(http.HandlerFunc(s.handlePostConfigCertificates))},
+		{"PUT /api/v1/config/certificates/{id}", s.Authenticate(http.HandlerFunc(s.handlePutConfigCertificates))},
+		{"DELETE /api/v1/config/certificates/{id}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigCertificates))},
 
-	// Control plane APIs (Teams)
-	mux.Handle("GET /api/v1/config/teams", s.Authenticate(http.HandlerFunc(s.handleGetConfigTeams)))
-	mux.Handle("POST /api/v1/config/teams", s.Authenticate(http.HandlerFunc(s.handlePostConfigTeams)))
-	mux.Handle("PUT /api/v1/config/teams/{id}", s.Authenticate(http.HandlerFunc(s.handlePutConfigTeams)))
-	mux.Handle("DELETE /api/v1/config/teams/{id}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigTeams)))
+		// Control plane APIs (API Keys)
+		{"GET /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handleGetConfigAPIKeys))},
+		{"POST /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handlePostConfigAPIKeys))},
+		{"PUT /api/v1/config/api_keys/{id}", s.Authenticate(http.HandlerFunc(s.handlePutConfigAPIKeys))},
+		{"DELETE /api/v1/config/api_keys/{id}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigAPIKeys))},
+
+		// Control plane APIs (Teams)
+		{"GET /api/v1/config/teams", s.Authenticate(http.HandlerFunc(s.handleGetConfigTeams))},
+		{"POST /api/v1/config/teams", s.Authenticate(http.HandlerFunc(s.handlePostConfigTeams))},
+		{"PUT /api/v1/config/teams/{id}", s.Authenticate(http.HandlerFunc(s.handlePutConfigTeams))},
+		{"DELETE /api/v1/config/teams/{id}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigTeams))},
+	}
+
+	for _, r := range routes {
+		mux.Handle(r.pattern, r.handler)
+	}
 
 	return mux
 }
