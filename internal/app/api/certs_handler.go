@@ -154,16 +154,10 @@ func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if id == "" {
-		respondWithError(w, http.StatusBadRequest, "id parameter is required")
-		return
-	}
-
-	s.mu.RLock()
-	_, isStatic := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
-	s.mu.RUnlock()
-	if isStatic {
-		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
+	if s.checkStatic(w, id, func() bool {
+		_, is := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
+		return is
+	}) {
 		return
 	}
 
@@ -185,85 +179,48 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 
 	allowedTeams := allowedTeamsFromContext(r.Context())
 
-	s.mu.Lock()
-	foundIdx, found := findByID(s.cfg.State.Certificates, id, func(c config.CertConfig) string { return c.ID })
-	if !found {
-		s.mu.Unlock()
-		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
-		return
-	}
-
-	existingCert := s.cfg.State.Certificates[foundIdx]
-
-	if len(allowedTeams) > 0 {
-		if !isTeamAllowed(existingCert.TeamID, allowedTeams) {
-			s.mu.Unlock()
-			respondWithError(w, http.StatusNotFound, "certificate configuration not found")
-			return
+	getID := func(c config.CertConfig) string { return c.ID }
+	authCheck := func(existingCert config.CertConfig) (bool, int, string) {
+		if len(allowedTeams) > 0 {
+			if !isTeamAllowed(existingCert.TeamID, allowedTeams) {
+				return false, http.StatusNotFound, "certificate configuration not found"
+			}
+			if !isTeamAllowed(payload.TeamID, allowedTeams) {
+				return false, http.StatusForbidden, "forbidden: cannot manage certificates for this team"
+			}
 		}
-		if !isTeamAllowed(payload.TeamID, allowedTeams) {
-			s.mu.Unlock()
-			respondWithError(w, http.StatusForbidden, "forbidden: cannot manage certificates for this team")
-			return
-		}
+		return true, 0, ""
+	}
+	mutate := func(existing *config.CertConfig) {
+		existing.Primary = payload.Primary
+		existing.Sans = payload.Sans
+		existing.TeamID = payload.TeamID
+		existing.Description = payload.Description
 	}
 
-	s.cfg.State.Certificates[foundIdx].Primary = payload.Primary
-	s.cfg.State.Certificates[foundIdx].Sans = payload.Sans
-	s.cfg.State.Certificates[foundIdx].TeamID = payload.TeamID
-	s.cfg.State.Certificates[foundIdx].Description = payload.Description
-	s.mu.Unlock()
-
-	if err := s.saveAndReload(r.Context()); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
+	updateConfigResource(s, w, r, id, &s.cfg.State.Certificates, getID, "certificate configuration not found", authCheck, mutate)
 }
 
 func (s *Server) handleDeleteConfigCertificates(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if id == "" {
-		respondWithError(w, http.StatusBadRequest, "id parameter is required")
-		return
-	}
-
-	s.mu.RLock()
-	_, isStatic := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
-	s.mu.RUnlock()
-	if isStatic {
-		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
+	if s.checkStatic(w, id, func() bool {
+		_, is := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
+		return is
+	}) {
 		return
 	}
 
 	allowedTeams := allowedTeamsFromContext(r.Context())
-
-	s.mu.Lock()
-	foundIdx, found := findByID(s.cfg.State.Certificates, id, func(c config.CertConfig) string { return c.ID })
-	if !found {
-		s.mu.Unlock()
-		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
-		return
-	}
-
-	existingCert := s.cfg.State.Certificates[foundIdx]
-
-	if len(allowedTeams) > 0 {
-		if !isTeamAllowed(existingCert.TeamID, allowedTeams) {
-			s.mu.Unlock()
-			respondWithError(w, http.StatusNotFound, "certificate configuration not found")
-			return
+	getID := func(c config.CertConfig) string { return c.ID }
+	authCheck := func(existingCert config.CertConfig) (bool, int, string) {
+		if len(allowedTeams) > 0 {
+			if !isTeamAllowed(existingCert.TeamID, allowedTeams) {
+				return false, http.StatusNotFound, "certificate configuration not found"
+			}
 		}
+		return true, 0, ""
 	}
 
-	s.cfg.State.Certificates = removeAtIndex(s.cfg.State.Certificates, foundIdx)
-	s.mu.Unlock()
-
-	if err := s.saveAndReload(r.Context()); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	deleteConfigResource(s, w, r, id, &s.cfg.State.Certificates, getID, "certificate configuration not found", authCheck, nil)
 }
+

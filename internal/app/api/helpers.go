@@ -122,3 +122,114 @@ func findByID[T any](slice []T, id string, getID func(T) string) (int, bool) {
 func removeAtIndex[T any](slice []T, idx int) []T {
 	return append(slice[:idx], slice[idx+1:]...)
 }
+
+// checkStatic checks if a resource is statically configured (which cannot be mutated via API).
+// It returns true if the resource is static (and handles the error response), false otherwise.
+func (s *Server) checkStatic(w http.ResponseWriter, id string, isStatic func() bool) bool {
+	if id == "" {
+		respondWithError(w, http.StatusBadRequest, "id parameter is required")
+		return true
+	}
+
+	s.mu.RLock()
+	static := isStatic()
+	s.mu.RUnlock()
+
+	if static {
+		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
+		return true
+	}
+
+	return false
+}
+
+// updateConfigResource encapsulates the common workflow for updating a configuration resource.
+func updateConfigResource[T any](
+	s *Server,
+	w http.ResponseWriter,
+	r *http.Request,
+	id string,
+	stateSlice *[]T,
+	getID func(T) string,
+	notFoundMsg string,
+	authCheck func(existing T) (bool, int, string),
+	mutate func(existing *T),
+) {
+	s.mu.Lock()
+	foundIdx, found := findByID(*stateSlice, id, getID)
+	if !found {
+		s.mu.Unlock()
+		respondWithError(w, http.StatusNotFound, notFoundMsg)
+		return
+	}
+
+	existing := (*stateSlice)[foundIdx]
+
+	if authCheck != nil {
+		if allowed, code, msg := authCheck(existing); !allowed {
+			s.mu.Unlock()
+			respondWithError(w, code, msg)
+			return
+		}
+	}
+
+	mutate(&(*stateSlice)[foundIdx])
+	s.mu.Unlock()
+
+	if err := s.saveAndReload(r.Context()); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// deleteConfigResource encapsulates the common workflow for deleting a configuration resource.
+func deleteConfigResource[T any](
+	s *Server,
+	w http.ResponseWriter,
+	r *http.Request,
+	id string,
+	stateSlice *[]T,
+	getID func(T) string,
+	notFoundMsg string,
+	authCheck func(existing T) (bool, int, string),
+	preDeleteCheck func(existing T) (bool, int, string),
+) {
+	s.mu.Lock()
+	foundIdx, found := findByID(*stateSlice, id, getID)
+	if !found {
+		s.mu.Unlock()
+		respondWithError(w, http.StatusNotFound, notFoundMsg)
+		return
+	}
+
+	existing := (*stateSlice)[foundIdx]
+
+	if authCheck != nil {
+		if allowed, code, msg := authCheck(existing); !allowed {
+			s.mu.Unlock()
+			respondWithError(w, code, msg)
+			return
+		}
+	}
+
+	if preDeleteCheck != nil {
+		if allowed, code, msg := preDeleteCheck(existing); !allowed {
+			s.mu.Unlock()
+			respondWithError(w, code, msg)
+			return
+		}
+	}
+
+	*stateSlice = removeAtIndex(*stateSlice, foundIdx)
+	s.mu.Unlock()
+
+	if err := s.saveAndReload(r.Context()); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+

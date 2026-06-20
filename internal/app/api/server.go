@@ -91,6 +91,22 @@ func respondWithError(w http.ResponseWriter, code int, message string) {
 	respondWithJSON(w, code, map[string]string{"error": message})
 }
 
+// resolveToken matches a raw token against all configured API key hashes.
+func (s *Server) resolveToken(token string) *config.APIKeyConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, key := range s.cfg.AllAPIKeys() {
+		if key.Token != "" {
+			if match, err := VerifyToken(token, key.Token); err == nil && match {
+				tempKey := key
+				return &tempKey
+			}
+		}
+	}
+	return nil
+}
+
 // Authenticate is a middleware that validates Bearer token authentication
 // and injects allowed domains into the request context.
 func (s *Server) Authenticate(next http.Handler) http.Handler {
@@ -104,20 +120,7 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		var matchedKey *config.APIKeyConfig
-		s.mu.RLock()
-		allKeys := s.cfg.AllAPIKeys()
-		for _, key := range allKeys {
-			if key.Token != "" {
-				if match, err := VerifyToken(token, key.Token); err == nil && match {
-					tempKey := key
-					matchedKey = &tempKey
-					break
-				}
-			}
-		}
-		s.mu.RUnlock()
-
+		matchedKey := s.resolveToken(token)
 		if matchedKey == nil {
 			tokenPrefix := token
 			if len(token) > 5 {

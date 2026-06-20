@@ -64,26 +64,19 @@ func (s *Server) handlePostConfigTeams(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePutConfigTeams(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if id == "" {
-		respondWithError(w, http.StatusBadRequest, "id parameter is required")
+	if s.checkStatic(w, id, func() bool {
+		if id == "system" {
+			return true
+		}
+		_, is := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
+		return is
+	}) {
 		return
 	}
 
 	allowedTeams := allowedTeamsFromContext(r.Context())
 	if len(allowedTeams) > 0 {
 		respondWithError(w, http.StatusForbidden, "forbidden: only root admins can manage team configurations")
-		return
-	}
-
-	if id == "system" {
-		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
-		return
-	}
-	s.mu.RLock()
-	_, isStatic := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
-	s.mu.RUnlock()
-	if isStatic {
-		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
 		return
 	}
 
@@ -92,30 +85,24 @@ func (s *Server) handlePutConfigTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.Lock()
-	foundIdx, found := findByID(s.cfg.State.Teams, id, func(t config.TeamConfig) string { return t.ID })
-	if !found {
-		s.mu.Unlock()
-		respondWithError(w, http.StatusNotFound, "team configuration not found")
-		return
+	getID := func(t config.TeamConfig) string { return t.ID }
+	mutate := func(existing *config.TeamConfig) {
+		existing.Name = payload.Name
+		existing.Description = payload.Description
 	}
 
-	s.cfg.State.Teams[foundIdx].Name = payload.Name
-	s.cfg.State.Teams[foundIdx].Description = payload.Description
-	s.mu.Unlock()
-
-	if err := s.saveAndReload(r.Context()); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
+	updateConfigResource(s, w, r, id, &s.cfg.State.Teams, getID, "team configuration not found", nil, mutate)
 }
 
 func (s *Server) handleDeleteConfigTeams(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if id == "" {
-		respondWithError(w, http.StatusBadRequest, "id parameter is required")
+	if s.checkStatic(w, id, func() bool {
+		if id == "system" {
+			return true
+		}
+		_, is := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
+		return is
+	}) {
 		return
 	}
 
@@ -125,53 +112,24 @@ func (s *Server) handleDeleteConfigTeams(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if id == "system" {
-		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
-		return
-	}
-	s.mu.RLock()
-	_, isStatic := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
-	s.mu.RUnlock()
-	if isStatic {
-		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
-		return
-	}
-
-	s.mu.RLock()
-	allCerts := s.cfg.AllCertificates()
-	allKeys := s.cfg.AllAPIKeys()
-	s.mu.RUnlock()
-
-	for _, cert := range allCerts {
-		if cert.TeamID == id {
-			respondWithError(w, http.StatusBadRequest, "cannot delete team that is in use by certificates")
-			return
-		}
-	}
-	for _, key := range allKeys {
-		for _, allowedTeam := range key.AllowedTeams {
-			if allowedTeam == id {
-				respondWithError(w, http.StatusBadRequest, "cannot delete team that is in use by API keys")
-				return
+	getID := func(t config.TeamConfig) string { return t.ID }
+	preDeleteCheck := func(existing config.TeamConfig) (bool, int, string) {
+		// Held under s.mu.Lock() in deleteConfigResource
+		for _, cert := range s.cfg.AllCertificates() {
+			if cert.TeamID == id {
+				return false, http.StatusBadRequest, "cannot delete team that is in use by certificates"
 			}
 		}
+		for _, key := range s.cfg.AllAPIKeys() {
+			for _, allowedTeam := range key.AllowedTeams {
+				if allowedTeam == id {
+					return false, http.StatusBadRequest, "cannot delete team that is in use by API keys"
+				}
+			}
+		}
+		return true, 0, ""
 	}
 
-	s.mu.Lock()
-	foundIdx, found := findByID(s.cfg.State.Teams, id, func(t config.TeamConfig) string { return t.ID })
-	if !found {
-		s.mu.Unlock()
-		respondWithError(w, http.StatusNotFound, "team configuration not found")
-		return
-	}
-
-	s.cfg.State.Teams = removeAtIndex(s.cfg.State.Teams, foundIdx)
-	s.mu.Unlock()
-
-	if err := s.saveAndReload(r.Context()); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	deleteConfigResource(s, w, r, id, &s.cfg.State.Teams, getID, "team configuration not found", nil, preDeleteCheck)
 }
+
