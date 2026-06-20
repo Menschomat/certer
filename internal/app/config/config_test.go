@@ -37,12 +37,14 @@ func TestLoadConfig(t *testing.T) {
 		"check_interval_hours": 12,
 		"certificates": [
 			{
+				"id": "019035a1-7b00-7521-8280-60b6adbf47eb",
 				"primary": "example.com",
 				"sans": ["*.example.com", "www.example.com"]
 			}
 		],
 		"api_keys": [
 			{
+				"id": "019035a1-7b00-7521-8280-60b6adbf47ec",
 				"token": "blabliblub",
 				"allowed_domains": ["menscho.space", "weihrauchphoto.de"]
 			}
@@ -79,6 +81,7 @@ func TestLoadConfig(t *testing.T) {
 
 	expectedCerts := []CertConfig{
 		{
+			ID:      "019035a1-7b00-7521-8280-60b6adbf47eb",
 			Primary: "example.com",
 			Sans:    []string{"*.example.com", "www.example.com"},
 		},
@@ -89,6 +92,7 @@ func TestLoadConfig(t *testing.T) {
 
 	expectedAPIKeys := []APIKeyConfig{
 		{
+			ID:             "019035a1-7b00-7521-8280-60b6adbf47ec",
 			Token:          "blabliblub",
 			AllowedDomains: []string{"menscho.space", "weihrauchphoto.de"},
 		},
@@ -327,12 +331,14 @@ func TestSaveConfig(t *testing.T) {
 		CheckIntervalHours: 24,
 		Certificates: []CertConfig{
 			{
+				ID:      "019035a1-7b00-7521-8280-60b6adbf47eb",
 				Primary: "example.com",
 				Sans:    []string{"*.example.com"},
 			},
 		},
 		APIKeys: []APIKeyConfig{
 			{
+				ID:             "019035a1-7b00-7521-8280-60b6adbf47ec",
 				Token:          "hashed-token",
 				AllowedDomains: []string{"example.com"},
 				Admin:          true,
@@ -361,6 +367,48 @@ func TestSaveConfig(t *testing.T) {
 	}
 	if !reflect.DeepEqual(loadedCfg.APIKeys, cfg.APIKeys) {
 		t.Errorf("Expected APIKeys %+v, got %+v", cfg.APIKeys, loadedCfg.APIKeys)
+	}
+}
+
+func TestLoadConfig_AutoGenerateIDs(t *testing.T) {
+	configJSON := `{
+		"certificates": [
+			{
+				"primary": "auto-gen.com",
+				"sans": ["*.auto-gen.com"]
+			}
+		],
+		"api_keys": [
+			{
+				"token": "secret-token",
+				"allowed_domains": ["auto-gen.com"]
+			}
+		]
+	}`
+
+	configPath := createTempConfig(t, configJSON)
+	os.Setenv("CONFIG_PATH", configPath)
+	defer os.Unsetenv("CONFIG_PATH")
+
+	cfg := Load()
+
+	if len(cfg.Certificates) != 1 || cfg.Certificates[0].ID == "" {
+		t.Errorf("Expected auto-generated Certificate ID, got empty")
+	}
+	if len(cfg.APIKeys) != 1 || cfg.APIKeys[0].ID == "" {
+		t.Errorf("Expected auto-generated API Key ID, got empty")
+	}
+
+	certID := cfg.Certificates[0].ID
+	apiKeyID := cfg.APIKeys[0].ID
+
+	// Verify that the file on disk was updated and contains the generated IDs
+	cfgReloaded := Load()
+	if cfgReloaded.Certificates[0].ID != certID {
+		t.Errorf("Expected reloaded Certificate ID %q, got %q", certID, cfgReloaded.Certificates[0].ID)
+	}
+	if cfgReloaded.APIKeys[0].ID != apiKeyID {
+		t.Errorf("Expected reloaded API Key ID %q, got %q", apiKeyID, cfgReloaded.APIKeys[0].ID)
 	}
 }
 

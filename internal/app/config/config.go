@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // CertConfig configures primary domain and its SANs.
@@ -164,6 +166,34 @@ func Load() *Config {
 
 	if cfg.ACMEDirectoryURL == "" {
 		cfg.ACMEDirectoryURL = defaultACMEURL(cfg.ACMEProvider, cfg.Env)
+	}
+
+	dirty := false
+	for i := range cfg.Certificates {
+		if cfg.Certificates[i].ID == "" {
+			if id, err := uuid.NewV7(); err == nil {
+				cfg.Certificates[i].ID = id.String()
+				dirty = true
+			}
+		}
+	}
+	for i := range cfg.APIKeys {
+		if cfg.APIKeys[i].ID == "" {
+			if id, err := uuid.NewV7(); err == nil {
+				cfg.APIKeys[i].ID = id.String()
+				dirty = true
+			}
+		}
+	}
+
+	if dirty {
+		if _, err := os.Stat(configPath); err == nil {
+			if err := cfg.Save(configPath); err != nil {
+				slog.Error("Failed to save auto-generated IDs to config file", "path", configPath, "error", err)
+			} else {
+				slog.Info("Auto-generated and persisted missing IDs in config file", "path", configPath)
+			}
+		}
 	}
 
 	return cfg
