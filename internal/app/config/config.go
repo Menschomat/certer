@@ -10,14 +10,17 @@ import (
 
 // CertConfig configures primary domain and its SANs.
 type CertConfig struct {
-	Primary string   `json:"primary"`
-	Sans    []string `json:"sans"`
+	ID          string   `json:"id"`
+	Primary     string   `json:"primary"`
+	Sans        []string `json:"sans"`
+	Description string   `json:"description"`
 }
 
 // APIKeyConfig defines token to domain mapping.
 type APIKeyConfig struct {
-	Name           string   `json:"name"`
+	ID             string   `json:"id"`
 	Token          string   `json:"token"`
+	Description    string   `json:"description"`
 	AllowedDomains []string `json:"allowed_domains"`
 	Admin          bool     `json:"admin"`
 }

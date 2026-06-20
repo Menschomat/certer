@@ -73,29 +73,29 @@ func (s *Scheduler) CheckAndRenew(ctx context.Context) error {
 	s.mu.RUnlock()
 
 	for _, cc := range certs {
-		if cc.Primary == "" {
+		if cc.ID == "" {
 			continue
 		}
 
 		domains := append([]string{cc.Primary}, cc.Sans...)
 		reason, err := s.needsRenewal(cc, domains)
 		if err != nil {
-			slog.Error("Failed to check certificate status", "primary_domain", cc.Primary, "error", err)
+			slog.Error("Failed to check certificate status", "id", cc.ID, "primary_domain", cc.Primary, "error", err)
 			continue
 		}
 
 		if reason != "" {
-			slog.Info("Certificate renewal triggered", "primary_domain", cc.Primary, "reason", reason, "domains", domains)
-			result, err := s.issuer.Issue(ctx, s.email, domains)
+			slog.Info("Certificate renewal triggered", "id", cc.ID, "primary_domain", cc.Primary, "reason", reason, "domains", domains)
+			result, err := s.issuer.Issue(ctx, s.email, domains, cc.ID)
 			if err != nil {
-				slog.Error("Failed to issue certificate", "primary_domain", cc.Primary, "error", err)
+				slog.Error("Failed to issue certificate", "id", cc.ID, "primary_domain", cc.Primary, "error", err)
 				continue
 			}
-			slog.Info("Certificate issued and saved successfully", "domain", result.Domain)
+			slog.Info("Certificate issued and saved successfully", "id", cc.ID, "domain", result.Domain)
 			continue
 		}
 
-		slog.Info("Certificate is valid and configuration matches. No action required.", "domain", cc.Primary)
+		slog.Info("Certificate is valid and configuration matches. No action required.", "id", cc.ID, "domain", cc.Primary)
 	}
 
 	s.cleanupUnusedCertificates()
@@ -103,7 +103,7 @@ func (s *Scheduler) CheckAndRenew(ctx context.Context) error {
 }
 
 // cleanupUnusedCertificates deletes certificate and key files from the storage directory
-// if they belong to a primary domain that is no longer configured.
+// if they belong to a configuration ID that is no longer configured.
 func (s *Scheduler) cleanupUnusedCertificates() {
 	if s.storageDir == "" {
 		return
@@ -114,12 +114,12 @@ func (s *Scheduler) cleanupUnusedCertificates() {
 		return
 	}
 
-	// Create a map of configured primary domains
+	// Create a map of configured IDs
 	configured := make(map[string]bool)
 	s.mu.RLock()
 	for _, cc := range s.certificates {
-		if cc.Primary != "" {
-			configured[cc.Primary] = true
+		if cc.ID != "" {
+			configured[cc.ID] = true
 		}
 	}
 	s.mu.RUnlock()
@@ -129,18 +129,18 @@ func (s *Scheduler) cleanupUnusedCertificates() {
 			continue
 		}
 		name := file.Name()
-		var domain string
+		var configID string
 		var isCertOrKey bool
 		ext := filepath.Ext(name)
 		if ext == ".crt" || ext == ".key" {
-			domain = strings.TrimSuffix(name, ext)
+			configID = strings.TrimSuffix(name, ext)
 			isCertOrKey = true
 		}
 
-		if isCertOrKey && domain != "" {
-			if !configured[domain] {
+		if isCertOrKey && configID != "" {
+			if !configured[configID] {
 				path := filepath.Join(s.storageDir, name)
-				slog.Info("Cleaning up unused certificate/key file", "file", name, "domain", domain)
+				slog.Info("Cleaning up unused certificate/key file", "file", name, "id", configID)
 				if err := os.Remove(path); err != nil {
 					slog.Error("Failed to remove unused certificate/key file", "file", name, "error", err)
 				}
@@ -151,7 +151,7 @@ func (s *Scheduler) cleanupUnusedCertificates() {
 
 // needsRenewal checks if a certificate needs to be renewed and returns the reason.
 func (s *Scheduler) needsRenewal(cc config.CertConfig, domains []string) (string, error) {
-	certPath := filepath.Join(s.storageDir, cc.Primary+".crt")
+	certPath := filepath.Join(s.storageDir, cc.ID+".crt")
 	data, err := os.ReadFile(certPath)
 	if err != nil {
 		return "certificate file missing or unreadable", nil

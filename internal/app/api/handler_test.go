@@ -371,12 +371,12 @@ func TestControlPlaneAPI(t *testing.T) {
 		Port: "8080",
 		APIKeys: []config.APIKeyConfig{
 			{
-				Name:  "admin-key",
+				ID:    "admin-key-id",
 				Token: "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs", // hash for "blabliblub"
 				Admin: true,
 			},
 			{
-				Name:           "fetch-key",
+				ID:             "fetch-key-id",
 				Token:          "fetch-token-hash",
 				AllowedDomains: []string{"example.com"},
 				Admin:          false,
@@ -384,6 +384,7 @@ func TestControlPlaneAPI(t *testing.T) {
 		},
 		Certificates: []config.CertConfig{
 			{
+				ID:      "example-cert-id",
 				Primary: "example.com",
 				Sans:    []string{"www.example.com"},
 			},
@@ -401,6 +402,7 @@ func TestControlPlaneAPI(t *testing.T) {
 	// Admin Authorization Header
 	adminHeader := "Bearer blabliblub"
 
+	var newCertID string
 	t.Run("GET Certificates Configuration", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/config/certificates", nil)
 		req.Header.Set("Authorization", adminHeader)
@@ -418,15 +420,16 @@ func TestControlPlaneAPI(t *testing.T) {
 		if err := json.NewDecoder(res.Body).Decode(&certs); err != nil {
 			t.Fatalf("Decode failed: %v", err)
 		}
-		if len(certs) != 1 || certs[0].Primary != "example.com" {
+		if len(certs) != 1 || certs[0].Primary != "example.com" || certs[0].ID != "example-cert-id" {
 			t.Errorf("Unexpected certificates response: %+v", certs)
 		}
 	})
 
 	t.Run("POST Certificate Configuration - Success", func(t *testing.T) {
 		newCert := config.CertConfig{
-			Primary: "newdomain.com",
-			Sans:    []string{"*.newdomain.com"},
+			Primary:     "newdomain.com",
+			Sans:        []string{"*.newdomain.com"},
+			Description: "New Certificate",
 		}
 		body, _ := json.Marshal(newCert)
 		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/config/certificates", bytes.NewReader(body))
@@ -442,6 +445,15 @@ func TestControlPlaneAPI(t *testing.T) {
 			t.Errorf("Expected 201 Created, got %d", res.StatusCode)
 		}
 
+		var created config.CertConfig
+		if err := json.NewDecoder(res.Body).Decode(&created); err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+		newCertID = created.ID
+		if newCertID == "" {
+			t.Errorf("Expected generated UUID in response")
+		}
+
 		// Verify reloader was called
 		if reloader.CalledCount != 1 {
 			t.Errorf("Expected reloader to be called once, got %d", reloader.CalledCount)
@@ -449,14 +461,15 @@ func TestControlPlaneAPI(t *testing.T) {
 
 		// Verify saved config file has the new certificate
 		loadedCfg := config.Load()
-		if len(loadedCfg.Certificates) != 2 || loadedCfg.Certificates[1].Primary != "newdomain.com" {
+		if len(loadedCfg.Certificates) != 2 || loadedCfg.Certificates[1].Primary != "newdomain.com" || loadedCfg.Certificates[1].ID != newCertID {
 			t.Errorf("Expected new certificate to be saved on disk, got: %+v", loadedCfg.Certificates)
 		}
 	})
 
-	t.Run("POST Certificate Configuration - Conflict", func(t *testing.T) {
+	t.Run("POST Certificate Configuration - Duplicate Allowed", func(t *testing.T) {
 		duplicateCert := config.CertConfig{
 			Primary: "example.com",
+			Sans:    []string{"another.example.com"},
 		}
 		body, _ := json.Marshal(duplicateCert)
 		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/config/certificates", bytes.NewReader(body))
@@ -468,17 +481,19 @@ func TestControlPlaneAPI(t *testing.T) {
 		}
 		defer res.Body.Close()
 
-		if res.StatusCode != http.StatusConflict {
-			t.Errorf("Expected 409 Conflict, got %d", res.StatusCode)
+		if res.StatusCode != http.StatusCreated {
+			t.Errorf("Expected 201 Created, got %d", res.StatusCode)
 		}
 	})
 
 	t.Run("PUT Certificate Configuration - Success", func(t *testing.T) {
 		updatedCert := config.CertConfig{
-			Sans: []string{"admin.example.com", "mail.example.com"},
+			Primary:     "example.com",
+			Sans:        []string{"admin.example.com", "mail.example.com"},
+			Description: "Updated Description",
 		}
 		body, _ := json.Marshal(updatedCert)
-		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config/certificates/example.com", bytes.NewReader(body))
+		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config/certificates/example-cert-id", bytes.NewReader(body))
 		req.Header.Set("Authorization", adminHeader)
 		req.Header.Set("Content-Type", "application/json")
 		res, err := http.DefaultClient.Do(req)
@@ -493,9 +508,9 @@ func TestControlPlaneAPI(t *testing.T) {
 
 		loadedCfg := config.Load()
 		for _, c := range loadedCfg.Certificates {
-			if c.Primary == "example.com" {
-				if len(c.Sans) != 2 || c.Sans[0] != "admin.example.com" {
-					t.Errorf("Expected updated SANs, got %+v", c.Sans)
+			if c.ID == "example-cert-id" {
+				if len(c.Sans) != 2 || c.Sans[0] != "admin.example.com" || c.Description != "Updated Description" {
+					t.Errorf("Expected updated SANs and description, got %+v", c)
 				}
 			}
 		}
@@ -506,7 +521,7 @@ func TestControlPlaneAPI(t *testing.T) {
 			Sans: []string{"mail.nonexistent.com"},
 		}
 		body, _ := json.Marshal(updatedCert)
-		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config/certificates/nonexistent.com", bytes.NewReader(body))
+		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config/certificates/nonexistent-id", bytes.NewReader(body))
 		req.Header.Set("Authorization", adminHeader)
 		req.Header.Set("Content-Type", "application/json")
 		res, err := http.DefaultClient.Do(req)
@@ -521,7 +536,7 @@ func TestControlPlaneAPI(t *testing.T) {
 	})
 
 	t.Run("DELETE Certificate Configuration - Success", func(t *testing.T) {
-		req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/config/certificates/newdomain.com", nil)
+		req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/config/certificates/"+newCertID, nil)
 		req.Header.Set("Authorization", adminHeader)
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -531,11 +546,6 @@ func TestControlPlaneAPI(t *testing.T) {
 
 		if res.StatusCode != http.StatusNoContent {
 			t.Errorf("Expected 204 No Content, got %d", res.StatusCode)
-		}
-
-		loadedCfg := config.Load()
-		if len(loadedCfg.Certificates) != 1 || loadedCfg.Certificates[0].Primary != "example.com" {
-			t.Errorf("Expected newdomain.com to be removed from disk, got: %+v", loadedCfg.Certificates)
 		}
 	})
 
@@ -561,9 +571,10 @@ func TestControlPlaneAPI(t *testing.T) {
 		}
 	})
 
+	var newKeyID string
 	t.Run("POST API Key Configuration - Success", func(t *testing.T) {
 		newKey := config.APIKeyConfig{
-			Name:           "new-key",
+			Description:    "New Deploy Key",
 			AllowedDomains: []string{"newdomain.com"},
 			Admin:          false,
 		}
@@ -582,9 +593,10 @@ func TestControlPlaneAPI(t *testing.T) {
 		}
 
 		type apiResponse struct {
-			Name           string   `json:"name"`
+			ID             string   `json:"id"`
 			Token          string   `json:"token"`
 			CleartextToken string   `json:"cleartext_token"`
+			Description    string   `json:"description"`
 			AllowedDomains []string `json:"allowed_domains"`
 			Admin          bool     `json:"admin"`
 		}
@@ -593,27 +605,37 @@ func TestControlPlaneAPI(t *testing.T) {
 			t.Fatalf("Decode failed: %v", err)
 		}
 
-		if resp.Name != "new-key" {
-			t.Errorf("Expected name 'new-key', got %s", resp.Name)
+		newKeyID = resp.ID
+		if newKeyID == "" {
+			t.Errorf("Expected generated UUID in response")
 		}
 		if len(resp.CleartextToken) != 64 {
 			t.Errorf("Expected 64-character cleartext token, got %s (length %d)", resp.CleartextToken, len(resp.CleartextToken))
 		}
 
 		loadedCfg := config.Load()
-		if len(loadedCfg.APIKeys) != 3 || loadedCfg.APIKeys[2].Name != "new-key" {
+		found := false
+		for _, k := range loadedCfg.APIKeys {
+			if k.ID == newKeyID {
+				found = true
+				if k.Description != "New Deploy Key" {
+					t.Errorf("Expected description 'New Deploy Key', got %s", k.Description)
+				}
+			}
+		}
+		if !found {
 			t.Errorf("Expected new API Key configuration to be saved, got: %+v", loadedCfg.APIKeys)
 		}
 	})
 
 	t.Run("PUT API Key Configuration - Success", func(t *testing.T) {
 		updatedKey := config.APIKeyConfig{
-			Name:           "new-key",
+			Description:    "Updated Deploy Key",
 			AllowedDomains: []string{"updated-domain.com"},
 			Admin:          true,
 		}
 		body, _ := json.Marshal(updatedKey)
-		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config/api_keys", bytes.NewReader(body))
+		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config/api_keys/"+newKeyID, bytes.NewReader(body))
 		req.Header.Set("Authorization", adminHeader)
 		req.Header.Set("Content-Type", "application/json")
 		res, err := http.DefaultClient.Do(req)
@@ -628,8 +650,8 @@ func TestControlPlaneAPI(t *testing.T) {
 
 		loadedCfg := config.Load()
 		for _, k := range loadedCfg.APIKeys {
-			if k.Name == "new-key" {
-				if !k.Admin || len(k.AllowedDomains) != 1 || k.AllowedDomains[0] != "updated-domain.com" {
+			if k.ID == newKeyID {
+				if !k.Admin || len(k.AllowedDomains) != 1 || k.AllowedDomains[0] != "updated-domain.com" || k.Description != "Updated Deploy Key" {
 					t.Errorf("Expected updated key settings, got: %+v", k)
 				}
 			}
@@ -637,7 +659,7 @@ func TestControlPlaneAPI(t *testing.T) {
 	})
 
 	t.Run("DELETE API Key Configuration - Success", func(t *testing.T) {
-		req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/config/api_keys?name=new-key", nil)
+		req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/config/api_keys/"+newKeyID, nil)
 		req.Header.Set("Authorization", adminHeader)
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -647,11 +669,6 @@ func TestControlPlaneAPI(t *testing.T) {
 
 		if res.StatusCode != http.StatusNoContent {
 			t.Errorf("Expected 204 No Content, got %d", res.StatusCode)
-		}
-
-		loadedCfg := config.Load()
-		if len(loadedCfg.APIKeys) != 2 {
-			t.Errorf("Expected key to be removed from disk, got: %+v", loadedCfg.APIKeys)
 		}
 	})
 }

@@ -27,7 +27,7 @@ type MockIssuer struct {
 	Err           error
 }
 
-func (m *MockIssuer) Issue(ctx context.Context, email string, domains []string) (*IssueResult, error) {
+func (m *MockIssuer) Issue(ctx context.Context, email string, domains []string, filename string) (*IssueResult, error) {
 	m.mu.Lock()
 	m.CalledCount++
 	m.CalledEmail = email
@@ -40,7 +40,7 @@ func (m *MockIssuer) Issue(ctx context.Context, email string, domains []string) 
 	}, m.Err
 }
 
-func createTestCertificate(t *testing.T, dir string, domain string, sans []string, notAfter time.Time) {
+func createTestCertificate(t *testing.T, dir string, id string, domain string, sans []string, notAfter time.Time) {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate private key: %v", err)
@@ -74,14 +74,14 @@ func createTestCertificate(t *testing.T, dir string, domain string, sans []strin
 		t.Fatalf("Failed to create dir: %v", err)
 	}
 
-	certOut, err := os.Create(filepath.Join(dir, domain+".crt"))
+	certOut, err := os.Create(filepath.Join(dir, id+".crt"))
 	if err != nil {
 		t.Fatalf("Failed to open cert file: %v", err)
 	}
 	defer certOut.Close()
 	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
 
-	keyOut, err := os.OpenFile(filepath.Join(dir, domain+".key"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	keyOut, err := os.OpenFile(filepath.Join(dir, id+".key"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		t.Fatalf("Failed to open key file: %v", err)
 	}
@@ -104,10 +104,12 @@ func TestScheduler_CheckAndRenew(t *testing.T) {
 	email := "user@example.com"
 	certsConfig := []config.CertConfig{
 		{
+			ID:      "id-example",
 			Primary: "example.com",
 			Sans:    []string{"*.example.com"},
 		},
 		{
+			ID:      "id-other",
 			Primary: "other.com",
 			Sans:    []string{"*.other.com"},
 		},
@@ -128,8 +130,8 @@ func TestScheduler_CheckAndRenew(t *testing.T) {
 
 	t.Run("One Valid, One Expiring", func(t *testing.T) {
 		mock := &MockIssuer{}
-		createTestCertificate(t, tmpDir, "example.com", []string{"*.example.com"}, time.Now().Add(60*24*time.Hour))
-		createTestCertificate(t, tmpDir, "other.com", []string{"*.other.com"}, time.Now().Add(10*24*time.Hour))
+		createTestCertificate(t, tmpDir, "id-example", "example.com", []string{"*.example.com"}, time.Now().Add(60*24*time.Hour))
+		createTestCertificate(t, tmpDir, "id-other", "other.com", []string{"*.other.com"}, time.Now().Add(10*24*time.Hour))
 
 		s := NewScheduler(mock, email, certsConfig, tmpDir, 30, 24)
 		err := s.CheckAndRenew(context.Background())
@@ -149,11 +151,11 @@ func TestScheduler_CheckAndRenew(t *testing.T) {
 		mock := &MockIssuer{}
 		
 		// Create certificate and key files
-		createTestCertificate(t, tmpDir, "example.com", []string{"*.example.com"}, time.Now().Add(60*24*time.Hour))
+		createTestCertificate(t, tmpDir, "id-example", "example.com", []string{"*.example.com"}, time.Now().Add(60*24*time.Hour))
 		
 		// Create unused files
-		unusedCertPath := filepath.Join(tmpDir, "unused.com.crt")
-		unusedKeyPath := filepath.Join(tmpDir, "unused.com.key")
+		unusedCertPath := filepath.Join(tmpDir, "id-unused.crt")
+		unusedKeyPath := filepath.Join(tmpDir, "id-unused.key")
 		randomFilePath := filepath.Join(tmpDir, "random.txt")
 		
 		if err := os.WriteFile(unusedCertPath, []byte("mock-cert"), 0600); err != nil {
@@ -169,6 +171,7 @@ func TestScheduler_CheckAndRenew(t *testing.T) {
 		// Configure only example.com (excluding unused.com)
 		singleCertConfig := []config.CertConfig{
 			{
+				ID:      "id-example",
 				Primary: "example.com",
 				Sans:    []string{"*.example.com"},
 			},
@@ -181,11 +184,11 @@ func TestScheduler_CheckAndRenew(t *testing.T) {
 		}
 
 		// example.com files should still exist
-		if _, err := os.Stat(filepath.Join(tmpDir, "example.com.crt")); os.IsNotExist(err) {
-			t.Errorf("example.com.crt should not have been deleted")
+		if _, err := os.Stat(filepath.Join(tmpDir, "id-example.crt")); os.IsNotExist(err) {
+			t.Errorf("id-example.crt should not have been deleted")
 		}
-		if _, err := os.Stat(filepath.Join(tmpDir, "example.com.key")); os.IsNotExist(err) {
-			t.Errorf("example.com.key should not have been deleted")
+		if _, err := os.Stat(filepath.Join(tmpDir, "id-example.key")); os.IsNotExist(err) {
+			t.Errorf("id-example.key should not have been deleted")
 		}
 
 		// random.txt should still exist (unrelated extension)
@@ -195,10 +198,10 @@ func TestScheduler_CheckAndRenew(t *testing.T) {
 
 		// unused.com files should have been deleted
 		if _, err := os.Stat(unusedCertPath); !os.IsNotExist(err) {
-			t.Errorf("unused.com.crt should have been cleaned up")
+			t.Errorf("id-unused.crt should have been cleaned up")
 		}
 		if _, err := os.Stat(unusedKeyPath); !os.IsNotExist(err) {
-			t.Errorf("unused.com.key should have been cleaned up")
+			t.Errorf("id-unused.key should have been cleaned up")
 		}
 	})
 }
@@ -209,6 +212,7 @@ func TestScheduler_ReloadConfig(t *testing.T) {
 
 	newCerts := []config.CertConfig{
 		{
+			ID:      "id-new",
 			Primary: "newdomain.com",
 			Sans:    []string{"www.newdomain.com"},
 		},

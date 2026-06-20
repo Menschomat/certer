@@ -52,14 +52,14 @@ func (s *Server) Routes() http.Handler {
 	// Control plane APIs (Certificates)
 	mux.Handle("GET /api/v1/config/certificates", s.Authenticate(http.HandlerFunc(s.handleGetConfigCertificates)))
 	mux.Handle("POST /api/v1/config/certificates", s.Authenticate(http.HandlerFunc(s.handlePostConfigCertificates)))
-	mux.Handle("PUT /api/v1/config/certificates/{domain}", s.Authenticate(http.HandlerFunc(s.handlePutConfigCertificates)))
-	mux.Handle("DELETE /api/v1/config/certificates/{domain}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigCertificates)))
+	mux.Handle("PUT /api/v1/config/certificates/{id}", s.Authenticate(http.HandlerFunc(s.handlePutConfigCertificates)))
+	mux.Handle("DELETE /api/v1/config/certificates/{id}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigCertificates)))
 
 	// Control plane APIs (API Keys)
 	mux.Handle("GET /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handleGetConfigAPIKeys)))
 	mux.Handle("POST /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handlePostConfigAPIKeys)))
-	mux.Handle("PUT /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handlePutConfigAPIKeys)))
-	mux.Handle("DELETE /api/v1/config/api_keys", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigAPIKeys)))
+	mux.Handle("PUT /api/v1/config/api_keys/{id}", s.Authenticate(http.HandlerFunc(s.handlePutConfigAPIKeys)))
+	mux.Handle("DELETE /api/v1/config/api_keys/{id}", s.Authenticate(http.HandlerFunc(s.handleDeleteConfigAPIKeys)))
 
 	return mux
 }
@@ -173,8 +173,8 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		certPath := filepath.Join(s.storageDir, cc.Primary+".crt")
-		keyPath := filepath.Join(s.storageDir, cc.Primary+".key")
+		certPath := filepath.Join(s.storageDir, cc.ID+".crt")
+		keyPath := filepath.Join(s.storageDir, cc.ID+".key")
 
 		resp := CertificateResponse{
 			Domain:       cc.Primary,
@@ -270,20 +270,12 @@ func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.mu.Lock()
-	exists := false
-	for _, c := range s.cfg.Certificates {
-		if c.Primary == payload.Primary {
-			exists = true
-			break
-		}
-	}
-	s.mu.Unlock()
-
-	if exists {
-		respondWithError(w, http.StatusConflict, "certificate configuration for primary domain already exists")
+	uuidStr, err := GenerateUUIDv7()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to generate ID")
 		return
 	}
+	payload.ID = uuidStr
 
 	s.mu.Lock()
 	s.cfg.Certificates = append(s.cfg.Certificates, payload)
@@ -298,9 +290,9 @@ func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Request) {
-	domain := r.PathValue("domain")
-	if domain == "" {
-		respondWithError(w, http.StatusBadRequest, "domain parameter is required")
+	id := r.PathValue("id")
+	if id == "" {
+		respondWithError(w, http.StatusBadRequest, "id parameter is required")
 		return
 	}
 
@@ -313,7 +305,7 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 	s.mu.Lock()
 	foundIdx := -1
 	for idx, c := range s.cfg.Certificates {
-		if c.Primary == domain {
+		if c.ID == id {
 			foundIdx = idx
 			break
 		}
@@ -325,7 +317,9 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	s.cfg.Certificates[foundIdx].Primary = payload.Primary
 	s.cfg.Certificates[foundIdx].Sans = payload.Sans
+	s.cfg.Certificates[foundIdx].Description = payload.Description
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -337,16 +331,16 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleDeleteConfigCertificates(w http.ResponseWriter, r *http.Request) {
-	domain := r.PathValue("domain")
-	if domain == "" {
-		respondWithError(w, http.StatusBadRequest, "domain parameter is required")
+	id := r.PathValue("id")
+	if id == "" {
+		respondWithError(w, http.StatusBadRequest, "id parameter is required")
 		return
 	}
 
 	s.mu.Lock()
 	foundIdx := -1
 	for idx, c := range s.cfg.Certificates {
-		if c.Primary == domain {
+		if c.ID == id {
 			foundIdx = idx
 			break
 		}
@@ -384,25 +378,13 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if payload.Name == "" {
-		respondWithError(w, http.StatusBadRequest, "name is required")
+
+	uuidStr, err := GenerateUUIDv7()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to generate ID")
 		return
 	}
-
-	s.mu.Lock()
-	exists := false
-	for _, k := range s.cfg.APIKeys {
-		if k.Name == payload.Name {
-			exists = true
-			break
-		}
-	}
-	s.mu.Unlock()
-
-	if exists {
-		respondWithError(w, http.StatusConflict, "API key configuration already exists")
-		return
-	}
+	payload.ID = uuidStr
 
 	// Generate 32-byte secure token (64 hex characters)
 	bytes := make([]byte, 32)
@@ -429,17 +411,19 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 	}
 
 	type APIKeyResponse struct {
-		Name           string   `json:"name"`
+		ID             string   `json:"id"`
 		Token          string   `json:"token"`
 		CleartextToken string   `json:"cleartext_token"`
+		Description    string   `json:"description"`
 		AllowedDomains []string `json:"allowed_domains"`
 		Admin          bool     `json:"admin"`
 	}
 
 	resp := APIKeyResponse{
-		Name:           payload.Name,
+		ID:             payload.ID,
 		Token:          payload.Token,
 		CleartextToken: cleartextToken,
+		Description:    payload.Description,
 		AllowedDomains: payload.AllowedDomains,
 		Admin:          payload.Admin,
 	}
@@ -448,20 +432,22 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondWithError(w, http.StatusBadRequest, "id parameter is required")
+		return
+	}
+
 	var payload config.APIKeyConfig
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		respondWithError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if payload.Name == "" {
-		respondWithError(w, http.StatusBadRequest, "name is required")
 		return
 	}
 
 	s.mu.Lock()
 	foundIdx := -1
 	for idx, k := range s.cfg.APIKeys {
-		if k.Name == payload.Name {
+		if k.ID == id {
 			foundIdx = idx
 			break
 		}
@@ -475,6 +461,7 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 
 	s.cfg.APIKeys[foundIdx].AllowedDomains = payload.AllowedDomains
 	s.cfg.APIKeys[foundIdx].Admin = payload.Admin
+	s.cfg.APIKeys[foundIdx].Description = payload.Description
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -486,16 +473,16 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleDeleteConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("name")
-	if name == "" {
-		respondWithError(w, http.StatusBadRequest, "name query parameter is required")
+	id := r.PathValue("id")
+	if id == "" {
+		respondWithError(w, http.StatusBadRequest, "id parameter is required")
 		return
 	}
 
 	s.mu.Lock()
 	foundIdx := -1
 	for idx, k := range s.cfg.APIKeys {
-		if k.Name == name {
+		if k.ID == id {
 			foundIdx = idx
 			break
 		}

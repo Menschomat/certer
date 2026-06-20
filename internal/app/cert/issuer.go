@@ -22,7 +22,7 @@ import (
 
 // CertificateIssuer is the interface for ACME certificate operations.
 type CertificateIssuer interface {
-	Issue(ctx context.Context, email string, domains []string) (*IssueResult, error)
+	Issue(ctx context.Context, email string, domains []string, filename string) (*IssueResult, error)
 }
 
 // Issuer manages cert issuance using Lego client.
@@ -62,7 +62,7 @@ type IssueResult struct {
 }
 
 // Issue requests a certificate for a list of domains from the ACME CA server.
-func (i *Issuer) Issue(ctx context.Context, email string, domains []string) (*IssueResult, error) {
+func (i *Issuer) Issue(ctx context.Context, email string, domains []string, filename string) (*IssueResult, error) {
 	if len(domains) == 0 {
 		return nil, fmt.Errorf("no domains provided for certificate issuance")
 	}
@@ -111,7 +111,7 @@ func (i *Issuer) Issue(ctx context.Context, email string, domains []string) (*Is
 	}
 
 	if i.storageDir != "" {
-		err = i.saveCertificates(primaryDomain, resource)
+		err = i.saveCertificates(filename, resource)
 		if err != nil {
 			return nil, fmt.Errorf("failed to save certs: %w", err)
 		}
