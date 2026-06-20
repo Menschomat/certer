@@ -20,6 +20,20 @@ type contextKey string
 const allowedDomainsKey contextKey = "allowed_domains"
 const allowedTeamsKey contextKey = "allowed_teams"
 
+func allowedDomainsFromContext(ctx context.Context) []string {
+	if val, ok := ctx.Value(allowedDomainsKey).([]string); ok && val != nil {
+		return val
+	}
+	return []string{}
+}
+
+func allowedTeamsFromContext(ctx context.Context) []string {
+	if val, ok := ctx.Value(allowedTeamsKey).([]string); ok && val != nil {
+		return val
+	}
+	return []string{}
+}
+
 // ConfigReloader defines the interface to reload scheduler configuration.
 type ConfigReloader interface {
 	ReloadConfig(ctx context.Context, certificates []config.CertConfig)
@@ -179,16 +193,8 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 }
 
 func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
-	allowedDomains, ok := r.Context().Value(allowedDomainsKey).([]string)
-	if !ok {
-		respondWithError(w, http.StatusInternalServerError, "failed to parse authorization context")
-		return
-	}
-	allowedTeams, ok := r.Context().Value(allowedTeamsKey).([]string)
-	if !ok {
-		respondWithError(w, http.StatusInternalServerError, "failed to parse authorization context")
-		return
-	}
+	allowedDomains := allowedDomainsFromContext(r.Context())
+	allowedTeams := allowedTeamsFromContext(r.Context())
 
 	respList := []CertificateResponse{}
 

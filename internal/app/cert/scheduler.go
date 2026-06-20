@@ -157,6 +157,11 @@ func (s *Scheduler) needsRenewal(cc config.CertConfig, domains []string) (string
 		return "certificate file missing or unreadable", nil
 	}
 
+	keyPath := filepath.Join(s.storageDir, cc.ID+".key")
+	if _, err := os.Stat(keyPath); err != nil {
+		return "private key file missing or unreadable", nil
+	}
+
 	block, _ := pem.Decode(data)
 	if block == nil {
 		return "failed to decode certificate PEM", nil

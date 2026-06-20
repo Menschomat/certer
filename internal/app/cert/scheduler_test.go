@@ -147,6 +147,36 @@ func TestScheduler_CheckAndRenew(t *testing.T) {
 		}
 	})
 
+	t.Run("Valid Certificate, Missing Private Key", func(t *testing.T) {
+		mock := &MockIssuer{}
+		// Clean up files first
+		os.Remove(filepath.Join(tmpDir, "id-example.crt"))
+		os.Remove(filepath.Join(tmpDir, "id-example.key"))
+		os.Remove(filepath.Join(tmpDir, "id-other.crt"))
+		os.Remove(filepath.Join(tmpDir, "id-other.key"))
+
+		createTestCertificate(t, tmpDir, "id-example", "example.com", []string{"*.example.com"}, time.Now().Add(60*24*time.Hour))
+		createTestCertificate(t, tmpDir, "id-other", "other.com", []string{"*.other.com"}, time.Now().Add(60*24*time.Hour))
+
+		// Delete only the private key for id-example
+		if err := os.Remove(filepath.Join(tmpDir, "id-example.key")); err != nil {
+			t.Fatalf("Failed to remove mock key: %v", err)
+		}
+
+		s := NewScheduler(mock, email, certsConfig, tmpDir, 30, 24)
+		err := s.CheckAndRenew(context.Background())
+		if err != nil {
+			t.Fatalf("CheckAndRenew failed: %v", err)
+		}
+
+		if mock.CalledCount != 1 {
+			t.Errorf("Expected Issue() to be called once, got %d", mock.CalledCount)
+		}
+		if len(mock.CalledDomains) > 0 && mock.CalledDomains[0][0] != "example.com" {
+			t.Errorf("Expected example.com to be renewed, got %v", mock.CalledDomains[0])
+		}
+	})
+
 	t.Run("Cleanup Unused Certificates", func(t *testing.T) {
 		mock := &MockIssuer{}
 		
