@@ -82,11 +82,19 @@ cp example.config.json config.json
   ],
   "renew_threshold_days": 30,
   "check_interval_hours": 24,
+  "teams": [
+    {
+      "id": "019035a1-7b00-7521-8280-60b6adbf47ea",
+      "name": "Team A",
+      "description": "Core infrastructure team"
+    }
+  ],
   "certificates": [
     {
       "id": "019035a1-7b00-7521-8280-60b6adbf47eb",
       "primary": "example.com",
       "sans": ["*.example.com", "www.example.com"],
+      "team_id": "019035a1-7b00-7521-8280-60b6adbf47ea",
       "description": "Production wildcard certificate"
     }
   ],
@@ -96,6 +104,7 @@ cp example.config.json config.json
       "token": "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs",
       "description": "Example admin API key",
       "allowed_domains": ["example.com"],
+      "allowed_teams": ["019035a1-7b00-7521-8280-60b6adbf47ea"],
       "admin": true
     }
   ]
@@ -119,8 +128,9 @@ cp example.config.json config.json
 | `dns_resolvers` | list | *None* | `DNS_RESOLVERS` | DNS resolvers (comma-separated list) to verify DNS-01 propagation |
 | `renew_threshold_days` | int | `30` | `RENEW_THRESHOLD_DAYS` | Days before expiry to trigger automatic renewal |
 | `check_interval_hours` | int | `24` | `CHECK_INTERVAL_HOURS` | Hours between checking local certificate status |
-| `certificates` | list | *None* | *None* | Target certificates list. Each object contains `id` (UUIDv7), `primary` (domain name), `sans` (list of alternative domain names), and `description` (string) |
-| `api_keys` | list | *None* | *None* | Authorized API keys list. Each object contains `id` (UUIDv7), `token` (Argon2id hash of the token), `description` (string), `allowed_domains` (list of strings), and `admin` (boolean) |
+| `teams` | list | *None* | *None* | Target teams metadata list. Each object contains `id` (UUIDv7), `name` (string), and `description` (string) |
+| `certificates` | list | *None* | *None* | Target certificates list. Each object contains `id` (UUIDv7), `primary` (domain name), `sans` (list of alternative domain names), `team_id` (UUIDv7 team identifier), and `description` (string) |
+| `api_keys` | list | *None* | *None* | Authorized API keys list. Each object contains `id` (UUIDv7), `token` (Argon2id hash of the token), `description` (string), `allowed_domains` (list of strings), `allowed_teams` (list of UUIDv7 team identifiers), and `admin` (boolean) |
 
 ### ACME Provider Configuration
 
@@ -374,6 +384,61 @@ Updates configuration of an API key by ID (e.g. allowed domains, admin role, or 
 
 #### 5.4 Delete API Key
 - **Endpoint**: `DELETE /api/v1/config/api_keys/{id}`
+- **Response**: Status `204 No Content`
+
+---
+
+### 6. Configuration: Teams (Admin APIs)
+Endpoints to manage teams.
+- **Auth**: Bearer Token (Admin Token, `admin = true`)
+
+#### 6.1 Get All Teams
+- **Endpoint**: `GET /api/v1/config/teams`
+- **Response**:
+  ```json
+  [
+    {
+      "id": "019035a1-7b00-7521-8280-60b6adbf47ea",
+      "name": "Team A",
+      "description": "Core infrastructure team"
+    }
+  ]
+  ```
+
+#### 6.2 Create Team
+Generates a new team configuration and returns a generated UUID v7.
+- **Endpoint**: `POST /api/v1/config/teams`
+- **Payload**:
+  ```json
+  {
+    "name": "Team B",
+    "description": "API Gateway team"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "id": "019035a1-f3b1-7a8e-a2cf-3847eab2038e",
+    "name": "Team B",
+    "description": "API Gateway team"
+  }
+  ```
+
+#### 6.3 Update Team
+Updates an existing team configuration by ID.
+- **Endpoint**: `PUT /api/v1/config/teams/{id}`
+- **Payload**:
+  ```json
+  {
+    "name": "Team B (Updated)",
+    "description": "Edge routing and gateway team"
+  }
+  ```
+- **Response**: Status `200 OK`
+
+#### 6.4 Delete Team
+Deletes a team configuration. Note that all certificates belonging to this team must have their `team_id` updated or be deleted to preserve referential integrity.
+- **Endpoint**: `DELETE /api/v1/config/teams/{id}`
 - **Response**: Status `204 No Content`
 
 ---
