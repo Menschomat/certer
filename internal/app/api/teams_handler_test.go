@@ -14,15 +14,9 @@ import (
 )
 
 func TestTeamConfigAndScoping(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "api-team-scoping-tests-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	configPath := filepath.Join(tmpDir, "config.json")
-	os.Setenv("CONFIG_PATH", configPath)
-	defer os.Unsetenv("CONFIG_PATH")
+	tmpDir, cleanup := setupTestEnv(t, "api-team-scoping-tests-*")
+	defer cleanup()
+	configPath := os.Getenv("CONFIG_PATH")
 
 	hashedToken, err := GenerateArgon2idHash("deploy-token")
 	if err != nil {
@@ -41,7 +35,7 @@ func TestTeamConfigAndScoping(t *testing.T) {
 			},
 			{
 				ID:    "admin-key-id",
-				Token: "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs", // hash for "blabliblub"
+				Token: testAdminHash,
 				Admin: true,
 			},
 		},
@@ -92,7 +86,7 @@ func TestTeamConfigAndScoping(t *testing.T) {
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
 
-	adminHeader := "Bearer blabliblub"
+	adminHeader := "Bearer " + testAdminToken
 
 	t.Run("GET Teams Config (Admin)", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/config/teams", nil)
@@ -260,15 +254,9 @@ func TestTeamConfigAndScoping(t *testing.T) {
 }
 
 func TestStaticResourceProtection_Teams(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "api-static-protect-teams-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	configPath := filepath.Join(tmpDir, "config.json")
-	os.Setenv("CONFIG_PATH", configPath)
-	defer os.Unsetenv("CONFIG_PATH")
+	tmpDir, cleanup := setupTestEnv(t, "api-static-protect-teams-*")
+	defer cleanup()
+	configPath := os.Getenv("CONFIG_PATH")
 
 	hashedAdmin, _ := GenerateArgon2idHash("admin-token")
 

@@ -15,11 +15,8 @@ import (
 )
 
 func TestHandleGetCertificates_Authentication(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "api-cert-tests-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir, cleanup := setupTestEnv(t, "api-cert-tests-*")
+	defer cleanup()
 
 	certsConfig := []config.CertConfig{
 		{
@@ -42,15 +39,10 @@ func TestHandleGetCertificates_Authentication(t *testing.T) {
 		},
 	}
 
-	hashedToken, err := GenerateArgon2idHash("blabliblub")
-	if err != nil {
-		t.Fatalf("Failed to generate test token hash: %v", err)
-	}
-
 	apiKeys := []config.APIKeyConfig{
 		{
 			ID:             "019035a1-7b00-7521-8280-60b6adbf47ee",
-			Token:          hashedToken,
+			Token:          testAdminHash,
 			AllowedDomains: []string{"menscho.space", "weihrauchphoto.de"},
 			AllowedTeams:   []string{"system"},
 		},
@@ -171,21 +163,16 @@ func TestHandleGetCertificates_Authentication(t *testing.T) {
 }
 
 func TestControlPlaneAPI_Certificates(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "control-plane-api-cert-tests-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-	configPath := filepath.Join(tmpDir, "config.json")
-	os.Setenv("CONFIG_PATH", configPath)
-	defer os.Unsetenv("CONFIG_PATH")
+	tmpDir, cleanup := setupTestEnv(t, "control-plane-api-cert-tests-*")
+	defer cleanup()
+	configPath := os.Getenv("CONFIG_PATH")
 
 	initialConfig := &config.Config{
 		Port: "8080",
 		APIKeys: []config.APIKeyConfig{
 			{
 				ID:    "admin-key-id",
-				Token: "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs", // hash for "blabliblub"
+				Token: testAdminHash,
 				Admin: true,
 			},
 		},
@@ -215,7 +202,7 @@ func TestControlPlaneAPI_Certificates(t *testing.T) {
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
 
-	adminHeader := "Bearer blabliblub"
+	adminHeader := "Bearer " + testAdminToken
 	var newCertID string
 
 	t.Run("GET Certificates Configuration", func(t *testing.T) {
@@ -371,15 +358,9 @@ func TestControlPlaneAPI_Certificates(t *testing.T) {
 }
 
 func TestScopedAdmin_Certificates(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "api-cert-scoped-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	configPath := filepath.Join(tmpDir, "config.json")
-	os.Setenv("CONFIG_PATH", configPath)
-	defer os.Unsetenv("CONFIG_PATH")
+	tmpDir, cleanup := setupTestEnv(t, "api-cert-scoped-*")
+	defer cleanup()
+	configPath := os.Getenv("CONFIG_PATH")
 
 	hashedScopedAdmin, _ := GenerateArgon2idHash("scoped-admin-token")
 
@@ -529,15 +510,9 @@ func TestScopedAdmin_Certificates(t *testing.T) {
 }
 
 func TestDefaultDeny_UnassignedCertificates(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "api-cert-deny-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	configPath := filepath.Join(tmpDir, "config.json")
-	os.Setenv("CONFIG_PATH", configPath)
-	defer os.Unsetenv("CONFIG_PATH")
+	tmpDir, cleanup := setupTestEnv(t, "api-cert-deny-*")
+	defer cleanup()
+	configPath := os.Getenv("CONFIG_PATH")
 
 	hashedFetchTokenEmpty, _ := GenerateArgon2idHash("fetch-token-empty")
 	hashedFetchTokenSystem, _ := GenerateArgon2idHash("fetch-token-system")
@@ -582,12 +557,10 @@ func TestDefaultDeny_UnassignedCertificates(t *testing.T) {
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
 
-	err = os.WriteFile(filepath.Join(tmpDir, "cert-unassigned.crt"), []byte("mock-cert"), 0644)
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "cert-unassigned.crt"), []byte("mock-cert"), 0644); err != nil {
 		t.Fatalf("Failed to write mock cert file: %v", err)
 	}
-	err = os.WriteFile(filepath.Join(tmpDir, "cert-unassigned.key"), []byte("mock-key"), 0644)
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "cert-unassigned.key"), []byte("mock-key"), 0644); err != nil {
 		t.Fatalf("Failed to write mock key file: %v", err)
 	}
 
@@ -642,15 +615,9 @@ func TestDefaultDeny_UnassignedCertificates(t *testing.T) {
 }
 
 func TestStaticResourceProtection_Certificates(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "api-static-protect-certs-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	configPath := filepath.Join(tmpDir, "config.json")
-	os.Setenv("CONFIG_PATH", configPath)
-	defer os.Unsetenv("CONFIG_PATH")
+	tmpDir, cleanup := setupTestEnv(t, "api-static-protect-certs-*")
+	defer cleanup()
+	configPath := os.Getenv("CONFIG_PATH")
 
 	hashedAdmin, _ := GenerateArgon2idHash("admin-token")
 

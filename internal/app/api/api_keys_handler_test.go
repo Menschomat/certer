@@ -13,21 +13,16 @@ import (
 )
 
 func TestControlPlaneAPI_APIKeys(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "control-plane-api-key-tests-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-	configPath := filepath.Join(tmpDir, "config.json")
-	os.Setenv("CONFIG_PATH", configPath)
-	defer os.Unsetenv("CONFIG_PATH")
+	tmpDir, cleanup := setupTestEnv(t, "control-plane-api-key-tests-*")
+	defer cleanup()
+	configPath := os.Getenv("CONFIG_PATH")
 
 	initialConfig := &config.Config{
 		Port: "8080",
 		APIKeys: []config.APIKeyConfig{
 			{
 				ID:    "admin-key-id",
-				Token: "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs", // hash for "blabliblub"
+				Token: testAdminHash,
 				Admin: true,
 			},
 		},
@@ -48,7 +43,7 @@ func TestControlPlaneAPI_APIKeys(t *testing.T) {
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
 
-	adminHeader := "Bearer blabliblub"
+	adminHeader := "Bearer " + testAdminToken
 
 	t.Run("GET API Keys Configuration", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/config/api_keys", nil)
@@ -181,15 +176,9 @@ func TestControlPlaneAPI_APIKeys(t *testing.T) {
 }
 
 func TestScopedAdmin_APIKeys(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "api-key-scoped-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	configPath := filepath.Join(tmpDir, "config.json")
-	os.Setenv("CONFIG_PATH", configPath)
-	defer os.Unsetenv("CONFIG_PATH")
+	tmpDir, cleanup := setupTestEnv(t, "api-key-scoped-*")
+	defer cleanup()
+	configPath := os.Getenv("CONFIG_PATH")
 
 	hashedScopedAdmin, _ := GenerateArgon2idHash("scoped-admin-token")
 	hashedRootAdmin, _ := GenerateArgon2idHash("root-admin-token")
