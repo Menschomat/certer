@@ -866,6 +866,34 @@ func TestTeamConfigAndScoping(t *testing.T) {
 		}
 	})
 
+	t.Run("DELETE Team Config - Fail if in use by certificates", func(t *testing.T) {
+		req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/config/teams/team-id-2", nil)
+		req.Header.Set("Authorization", adminHeader)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusBadRequest {
+			t.Errorf("Expected 400 Bad Request, got %d", res.StatusCode)
+		}
+	})
+
+	t.Run("DELETE Team Config - Fail if in use by API keys", func(t *testing.T) {
+		req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/config/teams/team-id-1", nil)
+		req.Header.Set("Authorization", adminHeader)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusBadRequest {
+			t.Errorf("Expected 400 Bad Request, got %d", res.StatusCode)
+		}
+	})
+
 	t.Run("DELETE Team Config (Admin)", func(t *testing.T) {
 		req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/config/teams/"+createdTeamID, nil)
 		req.Header.Set("Authorization", adminHeader)

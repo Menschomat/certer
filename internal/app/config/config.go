@@ -58,7 +58,6 @@ type Config struct {
 
 // Load loads configuration from environment variables with defaults.
 func Load() *Config {
-	// Defaults
 	cfg := &Config{
 		Port:               "8080",
 		Env:                "development",
@@ -78,90 +77,80 @@ func Load() *Config {
 	if data, err := os.ReadFile(configPath); err == nil {
 		var jsonCfg Config
 		if err := json.Unmarshal(data, &jsonCfg); err == nil {
-			if jsonCfg.Port != "" {
-				cfg.Port = jsonCfg.Port
-			}
-			if jsonCfg.Env != "" {
-				cfg.Env = jsonCfg.Env
-			}
-			if jsonCfg.ACMEProvider != "" {
-				cfg.ACMEProvider = jsonCfg.ACMEProvider
-			}
-			if jsonCfg.ACMEDirectoryURL != "" {
-				cfg.ACMEDirectoryURL = jsonCfg.ACMEDirectoryURL
-			}
-			if jsonCfg.EABKid != "" {
-				cfg.EABKid = jsonCfg.EABKid
-			}
-			if jsonCfg.EABHmac != "" {
-				cfg.EABHmac = jsonCfg.EABHmac
-			}
-			if jsonCfg.CertStorageDir != "" {
-				cfg.CertStorageDir = jsonCfg.CertStorageDir
-			}
-			if jsonCfg.ChallengePort != "" {
-				cfg.ChallengePort = jsonCfg.ChallengePort
-			}
-			if jsonCfg.ACMEEmail != "" {
-				cfg.ACMEEmail = jsonCfg.ACMEEmail
-			}
-			if jsonCfg.DNSProvider != "" {
-				cfg.DNSProvider = jsonCfg.DNSProvider
-			}
-			if len(jsonCfg.DNSResolvers) > 0 {
-				cfg.DNSResolvers = jsonCfg.DNSResolvers
-			}
-			if jsonCfg.RenewThresholdDays > 0 {
-				cfg.RenewThresholdDays = jsonCfg.RenewThresholdDays
-			}
-			if jsonCfg.CheckIntervalHours > 0 {
-				cfg.CheckIntervalHours = jsonCfg.CheckIntervalHours
-			}
-			if len(jsonCfg.Certificates) > 0 {
-				cfg.Certificates = jsonCfg.Certificates
-			}
-			if len(jsonCfg.APIKeys) > 0 {
-				cfg.APIKeys = jsonCfg.APIKeys
-			}
-			if len(jsonCfg.Teams) > 0 {
-				cfg.Teams = jsonCfg.Teams
-			}
+			cfg.mergeFromJSON(jsonCfg)
 		} else {
 			slog.Error("Failed to unmarshal config JSON", "path", configPath, "error", err)
 		}
 	}
 
-	// Environment variables always override JSON/Defaults
-	if envPort := os.Getenv("PORT"); envPort != "" {
-		cfg.Port = envPort
+	cfg.applyEnvOverrides()
+
+	if cfg.ACMEDirectoryURL == "" {
+		cfg.ACMEDirectoryURL = defaultACMEURL(cfg.ACMEProvider, cfg.Env)
 	}
-	if envEnv := os.Getenv("ENV"); envEnv != "" {
-		cfg.Env = envEnv
+
+	if cfg.ensureIDs() {
+		if _, err := os.Stat(configPath); err == nil {
+			if err := cfg.Save(configPath); err != nil {
+				slog.Error("Failed to save auto-generated IDs to config file", "path", configPath, "error", err)
+			} else {
+				slog.Info("Auto-generated and persisted missing IDs in config file", "path", configPath)
+			}
+		}
 	}
-	if envProvider := os.Getenv("ACME_PROVIDER"); envProvider != "" {
-		cfg.ACMEProvider = envProvider
+
+	return cfg
+}
+
+func mergeString(dst *string, src string) {
+	if src != "" {
+		*dst = src
 	}
-	if envACME := os.Getenv("ACME_DIRECTORY_URL"); envACME != "" {
-		cfg.ACMEDirectoryURL = envACME
+}
+
+func mergeInt(dst *int, src int) {
+	if src > 0 {
+		*dst = src
 	}
-	if envEABKid := os.Getenv("EAB_KID"); envEABKid != "" {
-		cfg.EABKid = envEABKid
+}
+
+func mergeSlice[T any](dst *[]T, src []T) {
+	if len(src) > 0 {
+		*dst = src
 	}
-	if envEABHmac := os.Getenv("EAB_HMAC"); envEABHmac != "" {
-		cfg.EABHmac = envEABHmac
-	}
-	if envStorage := os.Getenv("CERT_STORAGE_DIR"); envStorage != "" {
-		cfg.CertStorageDir = envStorage
-	}
-	if envChallenge := os.Getenv("CHALLENGE_PORT"); envChallenge != "" {
-		cfg.ChallengePort = envChallenge
-	}
-	if envEmail := os.Getenv("ACME_EMAIL"); envEmail != "" {
-		cfg.ACMEEmail = envEmail
-	}
-	if envDNS := os.Getenv("DNS_PROVIDER"); envDNS != "" {
-		cfg.DNSProvider = envDNS
-	}
+}
+
+func (cfg *Config) mergeFromJSON(jsonCfg Config) {
+	mergeString(&cfg.Port, jsonCfg.Port)
+	mergeString(&cfg.Env, jsonCfg.Env)
+	mergeString(&cfg.ACMEProvider, jsonCfg.ACMEProvider)
+	mergeString(&cfg.ACMEDirectoryURL, jsonCfg.ACMEDirectoryURL)
+	mergeString(&cfg.EABKid, jsonCfg.EABKid)
+	mergeString(&cfg.EABHmac, jsonCfg.EABHmac)
+	mergeString(&cfg.CertStorageDir, jsonCfg.CertStorageDir)
+	mergeString(&cfg.ChallengePort, jsonCfg.ChallengePort)
+	mergeString(&cfg.ACMEEmail, jsonCfg.ACMEEmail)
+	mergeString(&cfg.DNSProvider, jsonCfg.DNSProvider)
+	mergeSlice(&cfg.DNSResolvers, jsonCfg.DNSResolvers)
+	mergeInt(&cfg.RenewThresholdDays, jsonCfg.RenewThresholdDays)
+	mergeInt(&cfg.CheckIntervalHours, jsonCfg.CheckIntervalHours)
+	mergeSlice(&cfg.Certificates, jsonCfg.Certificates)
+	mergeSlice(&cfg.APIKeys, jsonCfg.APIKeys)
+	mergeSlice(&cfg.Teams, jsonCfg.Teams)
+}
+
+func (cfg *Config) applyEnvOverrides() {
+	mergeString(&cfg.Port, os.Getenv("PORT"))
+	mergeString(&cfg.Env, os.Getenv("ENV"))
+	mergeString(&cfg.ACMEProvider, os.Getenv("ACME_PROVIDER"))
+	mergeString(&cfg.ACMEDirectoryURL, os.Getenv("ACME_DIRECTORY_URL"))
+	mergeString(&cfg.EABKid, os.Getenv("EAB_KID"))
+	mergeString(&cfg.EABHmac, os.Getenv("EAB_HMAC"))
+	mergeString(&cfg.CertStorageDir, os.Getenv("CERT_STORAGE_DIR"))
+	mergeString(&cfg.ChallengePort, os.Getenv("CHALLENGE_PORT"))
+	mergeString(&cfg.ACMEEmail, os.Getenv("ACME_EMAIL"))
+	mergeString(&cfg.DNSProvider, os.Getenv("DNS_PROVIDER"))
+
 	if envResolvers := os.Getenv("DNS_RESOLVERS"); envResolvers != "" {
 		cfg.DNSResolvers = strings.Split(envResolvers, ",")
 	}
@@ -175,12 +164,9 @@ func Load() *Config {
 			cfg.CheckIntervalHours = val
 		}
 	}
+}
 
-
-	if cfg.ACMEDirectoryURL == "" {
-		cfg.ACMEDirectoryURL = defaultACMEURL(cfg.ACMEProvider, cfg.Env)
-	}
-
+func (cfg *Config) ensureIDs() bool {
 	dirty := false
 	for i := range cfg.Certificates {
 		if cfg.Certificates[i].ID == "" {
@@ -206,18 +192,7 @@ func Load() *Config {
 			}
 		}
 	}
-
-	if dirty {
-		if _, err := os.Stat(configPath); err == nil {
-			if err := cfg.Save(configPath); err != nil {
-				slog.Error("Failed to save auto-generated IDs to config file", "path", configPath, "error", err)
-			} else {
-				slog.Info("Auto-generated and persisted missing IDs in config file", "path", configPath)
-			}
-		}
-	}
-
-	return cfg
+	return dirty
 }
 
 func defaultACMEURL(provider, env string) string {

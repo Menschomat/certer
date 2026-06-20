@@ -88,6 +88,17 @@ type CertificateResponse struct {
 	KeyFilename  string   `json:"key_filename,omitempty"`
 }
 
+// APIKeyResponse represents the API key response with cleartext token.
+type APIKeyResponse struct {
+	ID             string   `json:"id"`
+	Token          string   `json:"token"`
+	CleartextToken string   `json:"cleartext_token"`
+	Description    string   `json:"description"`
+	AllowedDomains []string `json:"allowed_domains"`
+	AllowedTeams   []string `json:"allowed_teams"`
+	Admin          bool     `json:"admin"`
+}
+
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -301,9 +312,8 @@ func (s *Server) handleGetConfigCertificates(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Request) {
-	var payload config.CertConfig
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		respondWithError(w, http.StatusBadRequest, "invalid request body")
+	payload, ok := decodeBody[config.CertConfig](w, r)
+	if !ok {
 		return
 	}
 	if payload.Primary == "" {
@@ -344,9 +354,8 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var payload config.CertConfig
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		respondWithError(w, http.StatusBadRequest, "invalid request body")
+	payload, ok := decodeBody[config.CertConfig](w, r)
+	if !ok {
 		return
 	}
 	s.mu.RLock()
@@ -358,15 +367,8 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 	}
 
 	s.mu.Lock()
-	foundIdx := -1
-	for idx, c := range s.cfg.Certificates {
-		if c.ID == id {
-			foundIdx = idx
-			break
-		}
-	}
-
-	if foundIdx == -1 {
+	foundIdx, found := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
+	if !found {
 		s.mu.Unlock()
 		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
 		return
@@ -394,21 +396,14 @@ func (s *Server) handleDeleteConfigCertificates(w http.ResponseWriter, r *http.R
 	}
 
 	s.mu.Lock()
-	foundIdx := -1
-	for idx, c := range s.cfg.Certificates {
-		if c.ID == id {
-			foundIdx = idx
-			break
-		}
-	}
-
-	if foundIdx == -1 {
+	foundIdx, found := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
+	if !found {
 		s.mu.Unlock()
 		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
 		return
 	}
 
-	s.cfg.Certificates = append(s.cfg.Certificates[:foundIdx], s.cfg.Certificates[foundIdx+1:]...)
+	s.cfg.Certificates = removeAtIndex(s.cfg.Certificates, foundIdx)
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -429,9 +424,8 @@ func (s *Server) handleGetConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
-	var payload config.APIKeyConfig
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		respondWithError(w, http.StatusBadRequest, "invalid request body")
+	payload, ok := decodeBody[config.APIKeyConfig](w, r)
+	if !ok {
 		return
 	}
 	s.mu.RLock()
@@ -473,16 +467,6 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	type APIKeyResponse struct {
-		ID             string   `json:"id"`
-		Token          string   `json:"token"`
-		CleartextToken string   `json:"cleartext_token"`
-		Description    string   `json:"description"`
-		AllowedDomains []string `json:"allowed_domains"`
-		AllowedTeams   []string `json:"allowed_teams"`
-		Admin          bool     `json:"admin"`
-	}
-
 	resp := APIKeyResponse{
 		ID:             payload.ID,
 		Token:          payload.Token,
@@ -503,9 +487,8 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var payload config.APIKeyConfig
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		respondWithError(w, http.StatusBadRequest, "invalid request body")
+	payload, ok := decodeBody[config.APIKeyConfig](w, r)
+	if !ok {
 		return
 	}
 	s.mu.RLock()
@@ -517,15 +500,8 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 	}
 
 	s.mu.Lock()
-	foundIdx := -1
-	for idx, k := range s.cfg.APIKeys {
-		if k.ID == id {
-			foundIdx = idx
-			break
-		}
-	}
-
-	if foundIdx == -1 {
+	foundIdx, found := findByID(s.cfg.APIKeys, id, func(k config.APIKeyConfig) string { return k.ID })
+	if !found {
 		s.mu.Unlock()
 		respondWithError(w, http.StatusNotFound, "API key configuration not found")
 		return
@@ -553,21 +529,14 @@ func (s *Server) handleDeleteConfigAPIKeys(w http.ResponseWriter, r *http.Reques
 	}
 
 	s.mu.Lock()
-	foundIdx := -1
-	for idx, k := range s.cfg.APIKeys {
-		if k.ID == id {
-			foundIdx = idx
-			break
-		}
-	}
-
-	if foundIdx == -1 {
+	foundIdx, found := findByID(s.cfg.APIKeys, id, func(k config.APIKeyConfig) string { return k.ID })
+	if !found {
 		s.mu.Unlock()
 		respondWithError(w, http.StatusNotFound, "API key configuration not found")
 		return
 	}
 
-	s.cfg.APIKeys = append(s.cfg.APIKeys[:foundIdx], s.cfg.APIKeys[foundIdx+1:]...)
+	s.cfg.APIKeys = removeAtIndex(s.cfg.APIKeys, foundIdx)
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -609,9 +578,8 @@ func (s *Server) handleGetConfigTeams(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePostConfigTeams(w http.ResponseWriter, r *http.Request) {
-	var payload config.TeamConfig
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		respondWithError(w, http.StatusBadRequest, "invalid request body")
+	payload, ok := decodeBody[config.TeamConfig](w, r)
+	if !ok {
 		return
 	}
 	if payload.Name == "" {
@@ -645,22 +613,14 @@ func (s *Server) handlePutConfigTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var payload config.TeamConfig
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		respondWithError(w, http.StatusBadRequest, "invalid request body")
+	payload, ok := decodeBody[config.TeamConfig](w, r)
+	if !ok {
 		return
 	}
 
 	s.mu.Lock()
-	foundIdx := -1
-	for idx, t := range s.cfg.Teams {
-		if t.ID == id {
-			foundIdx = idx
-			break
-		}
-	}
-
-	if foundIdx == -1 {
+	foundIdx, found := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
+	if !found {
 		s.mu.Unlock()
 		respondWithError(w, http.StatusNotFound, "team configuration not found")
 		return
@@ -686,21 +646,32 @@ func (s *Server) handleDeleteConfigTeams(w http.ResponseWriter, r *http.Request)
 	}
 
 	s.mu.Lock()
-	foundIdx := -1
-	for idx, t := range s.cfg.Teams {
-		if t.ID == id {
-			foundIdx = idx
-			break
-		}
-	}
-
-	if foundIdx == -1 {
+	foundIdx, found := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
+	if !found {
 		s.mu.Unlock()
 		respondWithError(w, http.StatusNotFound, "team configuration not found")
 		return
 	}
 
-	s.cfg.Teams = append(s.cfg.Teams[:foundIdx], s.cfg.Teams[foundIdx+1:]...)
+	// Referential integrity check: check if the team is in use by any certificates or API keys
+	for _, cert := range s.cfg.Certificates {
+		if cert.TeamID == id {
+			s.mu.Unlock()
+			respondWithError(w, http.StatusBadRequest, "cannot delete team that is in use by certificates")
+			return
+		}
+	}
+	for _, key := range s.cfg.APIKeys {
+		for _, allowedTeam := range key.AllowedTeams {
+			if allowedTeam == id {
+				s.mu.Unlock()
+				respondWithError(w, http.StatusBadRequest, "cannot delete team that is in use by API keys")
+				return
+			}
+		}
+	}
+
+	s.cfg.Teams = removeAtIndex(s.cfg.Teams, foundIdx)
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -709,4 +680,27 @@ func (s *Server) handleDeleteConfigTeams(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func decodeBody[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
+	var payload T
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid request body")
+		var zero T
+		return zero, false
+	}
+	return payload, true
+}
+
+func findByID[T any](slice []T, id string, getID func(T) string) (int, bool) {
+	for idx, item := range slice {
+		if getID(item) == id {
+			return idx, true
+		}
+	}
+	return -1, false
+}
+
+func removeAtIndex[T any](slice []T, idx int) []T {
+	return append(slice[:idx], slice[idx+1:]...)
 }
