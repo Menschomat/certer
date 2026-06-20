@@ -84,15 +84,19 @@ cp example.config.json config.json
   "check_interval_hours": 24,
   "certificates": [
     {
+      "id": "019035a1-7b00-7521-8280-60b6adbf47eb",
       "primary": "example.com",
-      "sans": ["*.example.com", "www.example.com"]
+      "sans": ["*.example.com", "www.example.com"],
+      "description": "Production wildcard certificate"
     }
   ],
   "api_keys": [
     {
-      "name": "example-key",
+      "id": "019035a1-7b00-7521-8280-60b6adbf47ec",
       "token": "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs",
-      "allowed_domains": ["example.com"]
+      "description": "Example admin API key",
+      "allowed_domains": ["example.com"],
+      "admin": true
     }
   ]
 }
@@ -115,8 +119,8 @@ cp example.config.json config.json
 | `dns_resolvers` | list | *None* | `DNS_RESOLVERS` | DNS resolvers (comma-separated list) to verify DNS-01 propagation |
 | `renew_threshold_days` | int | `30` | `RENEW_THRESHOLD_DAYS` | Days before expiry to trigger automatic renewal |
 | `check_interval_hours` | int | `24` | `CHECK_INTERVAL_HOURS` | Hours between checking local certificate status |
-| `certificates` | list | *None* | *None* | Target certificates (primary domain and SANs) |
-| `api_keys` | list | *None* | *None* | Authorized API keys (unique name, Argon2id hash of token, and allowed domains) |
+| `certificates` | list | *None* | *None* | Target certificates list. Each object contains `id` (UUIDv7), `primary` (domain name), `sans` (list of alternative domain names), and `description` (string) |
+| `api_keys` | list | *None* | *None* | Authorized API keys list. Each object contains `id` (UUIDv7), `token` (Argon2id hash of the token), `description` (string), `allowed_domains` (list of strings), and `admin` (boolean) |
 
 ### ACME Provider Configuration
 
@@ -200,8 +204,19 @@ docker run --rm -it --entrypoint /keygen cert-central -token mysecret
 
 ## API Documentation
 
+The REST API enforces a strict separation of duties based on token type:
+- **Fetch Tokens (`admin = false`)**: Allowed to retrieve certificates via the read-only certificate endpoints. Forbidden from accessing configuration APIs.
+- **Admin Tokens (`admin = true`)**: Allowed to manage configurations via `/api/v1/config/*` endpoints. Forbidden from reading actual certificate private keys.
+
+All API requests (except `/health` and `/api/v1/hello`) must include the authentication token, typically passed as a `Bearer` token in the `Authorization` header:
+```http
+Authorization: Bearer <TOKEN>
+```
+
+---
+
 ### 1. Health Status
-Check if application is healthy.
+Check if the application is healthy.
 - **Endpoint**: `GET /health`
 - **Auth**: None
 - **Response**:
@@ -209,14 +224,28 @@ Check if application is healthy.
   {"status": "up"}
   ```
 
-### 2. Fetch Certificates
+---
+
+### 2. Hello Endpoint
+Retrieve a greetings message.
+- **Endpoint**: `GET /api/v1/hello`
+- **Auth**: None
+- **Response**:
+  ```json
+  {"message": "Hello from cert-central!"}
+  ```
+
+---
+
+### 3. Fetch Certificates
 Retrieve PEM-encoded certificates and private keys.
 - **Endpoint**: `GET /api/v1/certificates`
-- **Auth**: `Authorization: Bearer <TOKEN>` (or raw `<TOKEN>` in header)
+- **Auth**: Bearer Token (Fetch Token, `admin = false`)
 - **Response**:
   ```json
   [
     {
+      "id": "019035a1-7b00-7521-8280-60b6adbf47eb",
       "domain": "example.com",
       "sans": ["*.example.com", "www.example.com"],
       "issued": true,
@@ -227,6 +256,125 @@ Retrieve PEM-encoded certificates and private keys.
     }
   ]
   ```
+
+---
+
+### 4. Configuration: Certificates (Admin APIs)
+Endpoints to manage target certificate configurations.
+- **Auth**: Bearer Token (Admin Token, `admin = true`)
+
+#### 4.1 Get All Configurations
+- **Endpoint**: `GET /api/v1/config/certificates`
+- **Response**:
+  ```json
+  [
+    {
+      "id": "019035a1-7b00-7521-8280-60b6adbf47eb",
+      "primary": "example.com",
+      "sans": ["*.example.com", "www.example.com"],
+      "description": "Production wildcard certificate"
+    }
+  ]
+  ```
+
+#### 4.2 Create Configuration
+Generates a new configuration and returns a generated UUID v7.
+- **Endpoint**: `POST /api/v1/config/certificates`
+- **Payload**:
+  ```json
+  {
+    "primary": "new-domain.com",
+    "sans": ["www.new-domain.com"],
+    "description": "New website certificate"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "id": "019035a1-f3b1-7a8e-a2cf-3847eab2038e",
+    "primary": "new-domain.com",
+    "sans": ["www.new-domain.com"],
+    "description": "New website certificate"
+  }
+  ```
+
+#### 4.3 Update Configuration
+Updates an existing configuration by ID.
+- **Endpoint**: `PUT /api/v1/config/certificates/{id}`
+- **Payload**:
+  ```json
+  {
+    "primary": "new-domain.com",
+    "sans": ["www.new-domain.com", "api.new-domain.com"],
+    "description": "Updated website certificate"
+  }
+  ```
+- **Response**: Status `200 OK`
+
+#### 4.4 Delete Configuration
+Deletes certificate configuration and schedules cleanup of certificates on disk.
+- **Endpoint**: `DELETE /api/v1/config/certificates/{id}`
+- **Response**: Status `204 No Content`
+
+---
+
+### 5. Configuration: API Keys (Admin APIs)
+Endpoints to manage API keys.
+- **Auth**: Bearer Token (Admin Token, `admin = true`)
+
+#### 5.1 Get All API Keys
+Retrieves configured API keys (tokens are redacted).
+- **Endpoint**: `GET /api/v1/config/api_keys`
+- **Response**:
+  ```json
+  [
+    {
+      "id": "019035a1-7b00-7521-8280-60b6adbf47ec",
+      "description": "Example admin API key",
+      "allowed_domains": ["example.com"],
+      "admin": true
+    }
+  ]
+  ```
+
+#### 5.2 Create API Key
+Generates a new API key configuration and returns a generated UUID v7 and secure random token.
+- **Endpoint**: `POST /api/v1/config/api_keys`
+- **Payload**:
+  ```json
+  {
+    "description": "Deploy Key for team B",
+    "allowed_domains": ["team-b.com"],
+    "admin": false
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "id": "019035a2-9eef-70a0-88cb-e8a0a9db4e21",
+    "cleartext_token": "certc_9f02a...c0378",
+    "description": "Deploy Key for team B",
+    "allowed_domains": ["team-b.com"],
+    "admin": false
+  }
+  ```
+
+#### 5.3 Update API Key
+Updates configuration of an API key by ID (e.g. allowed domains, admin role, or description).
+- **Endpoint**: `PUT /api/v1/config/api_keys/{id}`
+- **Payload**:
+  ```json
+  {
+    "description": "Updated Deploy Key for team B",
+    "allowed_domains": ["team-b.com", "shared.com"],
+    "admin": false
+  }
+  ```
+- **Response**: Status `200 OK`
+
+#### 5.4 Delete API Key
+- **Endpoint**: `DELETE /api/v1/config/api_keys/{id}`
+- **Response**: Status `204 No Content`
 
 ---
 

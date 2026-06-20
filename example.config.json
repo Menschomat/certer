@@ -7,20 +7,24 @@
   ],
   "certificates": [
     {
+      "id": "019035a1-7b00-7521-8280-60b6adbf47eb",
       "primary": "example.com",
       "sans": [
         "*.example.com",
         "www.example.com"
-      ]
+      ],
+      "description": "Production wildcard certificate"
     }
   ],
   "api_keys": [
     {
-      "name": "example-key",
+      "id": "019035a1-7b00-7521-8280-60b6adbf47ec",
       "token": "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs",
+      "description": "Example admin API key",
       "allowed_domains": [
         "example.com"
-      ]
+      ],
+      "admin": true
     }
   ]
 }
