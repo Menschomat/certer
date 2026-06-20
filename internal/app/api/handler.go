@@ -152,7 +152,8 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 
 		var matchedKey *config.APIKeyConfig
 		s.mu.RLock()
-		for _, key := range s.cfg.APIKeys {
+		allKeys := s.cfg.AllAPIKeys()
+		for _, key := range allKeys {
 			if key.Token != "" {
 				if match, err := VerifyToken(token, key.Token); err == nil && match {
 					tempKey := key
@@ -211,8 +212,9 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 	respList := []CertificateResponse{}
 
 	s.mu.RLock()
-	certs := make([]config.CertConfig, len(s.cfg.Certificates))
-	copy(certs, s.cfg.Certificates)
+	allCerts := s.cfg.AllCertificates()
+	certs := make([]config.CertConfig, len(allCerts))
+	copy(certs, allCerts)
 	s.mu.RUnlock()
 
 	for _, cc := range certs {
@@ -257,9 +259,6 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 }
 
 func isTeamAllowed(teamID string, allowedTeams []string) bool {
-	if teamID == "" && len(allowedTeams) == 0 {
-		return true
-	}
 	for _, t := range allowedTeams {
 		if t == teamID {
 			return true
@@ -277,6 +276,32 @@ func isDomainAllowed(domain string, allowed []string) bool {
 	return false
 }
 
+func isSubset(sub, parent []string) bool {
+	parentMap := make(map[string]bool)
+	for _, p := range parent {
+		parentMap[p] = true
+	}
+	for _, s := range sub {
+		if !parentMap[s] {
+			return false
+		}
+	}
+	return true
+}
+
+func canManageKey(adminTeams []string, target config.APIKeyConfig) bool {
+	// Root Admin can manage all keys
+	if len(adminTeams) == 0 {
+		return true
+	}
+	// Scoped Admin cannot manage Root Admin keys
+	if target.Admin && len(target.AllowedTeams) == 0 {
+		return false
+	}
+	// Scoped Admin can only manage keys scoped to a subset of their allowed teams
+	return isSubset(target.AllowedTeams, adminTeams)
+}
+
 func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, HelloResponse{Message: "Hello, World!"})
 }
@@ -291,29 +316,23 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ReloadConfig(certificates []config.CertConfig, apiKeys []config.APIKeyConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.cfg.Certificates = certificates
-	s.cfg.APIKeys = apiKeys
+	s.cfg.State.Certificates = certificates
+	s.cfg.State.APIKeys = apiKeys
 }
 
 func (s *Server) saveAndReload(ctx context.Context) error {
-	configPath := os.Getenv("CONFIG_PATH")
-	if configPath == "" {
-		configPath = "./config.json"
-	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// 1. Save config to disk
-	if err := s.cfg.Save(configPath); err != nil {
-		slog.Error("Failed to save config on disk", "error", err)
+	// 1. Save state to disk
+	if err := s.cfg.SaveState(); err != nil {
+		slog.Error("Failed to save state on disk", "error", err)
 		return err
 	}
 
 	// 2. Reload scheduler (if present)
 	if s.reloader != nil {
-		certs := make([]config.CertConfig, len(s.cfg.Certificates))
-		copy(certs, s.cfg.Certificates)
+		certs := s.cfg.AllCertificates()
 		s.reloader.ReloadConfig(ctx, certs)
 	}
 
@@ -321,12 +340,24 @@ func (s *Server) saveAndReload(ctx context.Context) error {
 }
 
 func (s *Server) handleGetConfigCertificates(w http.ResponseWriter, r *http.Request) {
+	allowedTeams := allowedTeamsFromContext(r.Context())
+
 	s.mu.RLock()
-	certs := make([]config.CertConfig, len(s.cfg.Certificates))
-	copy(certs, s.cfg.Certificates)
+	allCerts := s.cfg.AllCertificates()
 	s.mu.RUnlock()
 
-	respondWithJSON(w, http.StatusOK, certs)
+	var filtered []config.CertConfig
+	for _, cert := range allCerts {
+		if len(allowedTeams) > 0 {
+			if isTeamAllowed(cert.TeamID, allowedTeams) {
+				filtered = append(filtered, cert)
+			}
+		} else {
+			filtered = append(filtered, cert)
+		}
+	}
+
+	respondWithJSON(w, http.StatusOK, filtered)
 }
 
 func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Request) {
@@ -338,6 +369,18 @@ func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Req
 		respondWithError(w, http.StatusBadRequest, "primary domain is required")
 		return
 	}
+	if payload.TeamID == "" {
+		payload.TeamID = "system"
+	}
+
+	allowedTeams := allowedTeamsFromContext(r.Context())
+	if len(allowedTeams) > 0 {
+		if !isTeamAllowed(payload.TeamID, allowedTeams) {
+			respondWithError(w, http.StatusForbidden, "forbidden: cannot manage certificates for this team")
+			return
+		}
+	}
+
 	s.mu.RLock()
 	validTeam := isValidTeam(s.cfg, payload.TeamID)
 	s.mu.RUnlock()
@@ -354,7 +397,7 @@ func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Req
 	payload.ID = uuidStr
 
 	s.mu.Lock()
-	s.cfg.Certificates = append(s.cfg.Certificates, payload)
+	s.cfg.State.Certificates = append(s.cfg.State.Certificates, payload)
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -372,10 +415,22 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	s.mu.RLock()
+	_, isStatic := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
+	s.mu.RUnlock()
+	if isStatic {
+		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
+		return
+	}
+
 	payload, ok := decodeBody[config.CertConfig](w, r)
 	if !ok {
 		return
 	}
+	if payload.TeamID == "" {
+		payload.TeamID = "system"
+	}
+
 	s.mu.RLock()
 	validTeam := isValidTeam(s.cfg, payload.TeamID)
 	s.mu.RUnlock()
@@ -384,18 +439,35 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	allowedTeams := allowedTeamsFromContext(r.Context())
+
 	s.mu.Lock()
-	foundIdx, found := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
+	foundIdx, found := findByID(s.cfg.State.Certificates, id, func(c config.CertConfig) string { return c.ID })
 	if !found {
 		s.mu.Unlock()
 		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
 		return
 	}
 
-	s.cfg.Certificates[foundIdx].Primary = payload.Primary
-	s.cfg.Certificates[foundIdx].Sans = payload.Sans
-	s.cfg.Certificates[foundIdx].TeamID = payload.TeamID
-	s.cfg.Certificates[foundIdx].Description = payload.Description
+	existingCert := s.cfg.State.Certificates[foundIdx]
+
+	if len(allowedTeams) > 0 {
+		if !isTeamAllowed(existingCert.TeamID, allowedTeams) {
+			s.mu.Unlock()
+			respondWithError(w, http.StatusNotFound, "certificate configuration not found")
+			return
+		}
+		if !isTeamAllowed(payload.TeamID, allowedTeams) {
+			s.mu.Unlock()
+			respondWithError(w, http.StatusForbidden, "forbidden: cannot manage certificates for this team")
+			return
+		}
+	}
+
+	s.cfg.State.Certificates[foundIdx].Primary = payload.Primary
+	s.cfg.State.Certificates[foundIdx].Sans = payload.Sans
+	s.cfg.State.Certificates[foundIdx].TeamID = payload.TeamID
+	s.cfg.State.Certificates[foundIdx].Description = payload.Description
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -413,15 +485,35 @@ func (s *Server) handleDeleteConfigCertificates(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	s.mu.RLock()
+	_, isStatic := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
+	s.mu.RUnlock()
+	if isStatic {
+		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
+		return
+	}
+
+	allowedTeams := allowedTeamsFromContext(r.Context())
+
 	s.mu.Lock()
-	foundIdx, found := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
+	foundIdx, found := findByID(s.cfg.State.Certificates, id, func(c config.CertConfig) string { return c.ID })
 	if !found {
 		s.mu.Unlock()
 		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
 		return
 	}
 
-	s.cfg.Certificates = removeAtIndex(s.cfg.Certificates, foundIdx)
+	existingCert := s.cfg.State.Certificates[foundIdx]
+
+	if len(allowedTeams) > 0 {
+		if !isTeamAllowed(existingCert.TeamID, allowedTeams) {
+			s.mu.Unlock()
+			respondWithError(w, http.StatusNotFound, "certificate configuration not found")
+			return
+		}
+	}
+
+	s.cfg.State.Certificates = removeAtIndex(s.cfg.State.Certificates, foundIdx)
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -433,12 +525,20 @@ func (s *Server) handleDeleteConfigCertificates(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) handleGetConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
+	allowedTeams := allowedTeamsFromContext(r.Context())
+
 	s.mu.RLock()
-	keys := make([]config.APIKeyConfig, len(s.cfg.APIKeys))
-	copy(keys, s.cfg.APIKeys)
+	allKeys := s.cfg.AllAPIKeys()
 	s.mu.RUnlock()
 
-	respondWithJSON(w, http.StatusOK, keys)
+	var filtered []config.APIKeyConfig
+	for _, key := range allKeys {
+		if canManageKey(allowedTeams, key) {
+			filtered = append(filtered, key)
+		}
+	}
+
+	respondWithJSON(w, http.StatusOK, filtered)
 }
 
 func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
@@ -446,6 +546,15 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
+	allowedTeams := allowedTeamsFromContext(r.Context())
+	if len(allowedTeams) > 0 {
+		if !isSubset(payload.AllowedTeams, allowedTeams) || !canManageKey(allowedTeams, payload) {
+			respondWithError(w, http.StatusForbidden, "forbidden: cannot manage API keys with these scopes")
+			return
+		}
+	}
+
 	s.mu.RLock()
 	validTeams := areTeamsValid(s.cfg, payload.AllowedTeams)
 	s.mu.RUnlock()
@@ -477,7 +586,7 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 	payload.Token = hash
 
 	s.mu.Lock()
-	s.cfg.APIKeys = append(s.cfg.APIKeys, payload)
+	s.cfg.State.APIKeys = append(s.cfg.State.APIKeys, payload)
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -505,10 +614,19 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	s.mu.RLock()
+	_, isStatic := findByID(s.cfg.APIKeys, id, func(k config.APIKeyConfig) string { return k.ID })
+	s.mu.RUnlock()
+	if isStatic {
+		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
+		return
+	}
+
 	payload, ok := decodeBody[config.APIKeyConfig](w, r)
 	if !ok {
 		return
 	}
+
 	s.mu.RLock()
 	validTeams := areTeamsValid(s.cfg, payload.AllowedTeams)
 	s.mu.RUnlock()
@@ -517,18 +635,35 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	allowedTeams := allowedTeamsFromContext(r.Context())
+
 	s.mu.Lock()
-	foundIdx, found := findByID(s.cfg.APIKeys, id, func(k config.APIKeyConfig) string { return k.ID })
+	foundIdx, found := findByID(s.cfg.State.APIKeys, id, func(k config.APIKeyConfig) string { return k.ID })
 	if !found {
 		s.mu.Unlock()
 		respondWithError(w, http.StatusNotFound, "API key configuration not found")
 		return
 	}
 
-	s.cfg.APIKeys[foundIdx].AllowedDomains = payload.AllowedDomains
-	s.cfg.APIKeys[foundIdx].AllowedTeams = payload.AllowedTeams
-	s.cfg.APIKeys[foundIdx].Admin = payload.Admin
-	s.cfg.APIKeys[foundIdx].Description = payload.Description
+	existingKey := s.cfg.State.APIKeys[foundIdx]
+
+	if len(allowedTeams) > 0 {
+		if !canManageKey(allowedTeams, existingKey) {
+			s.mu.Unlock()
+			respondWithError(w, http.StatusNotFound, "API key configuration not found")
+			return
+		}
+		if !isSubset(payload.AllowedTeams, allowedTeams) || !canManageKey(allowedTeams, payload) {
+			s.mu.Unlock()
+			respondWithError(w, http.StatusForbidden, "forbidden: cannot manage API keys with these scopes")
+			return
+		}
+	}
+
+	s.cfg.State.APIKeys[foundIdx].AllowedDomains = payload.AllowedDomains
+	s.cfg.State.APIKeys[foundIdx].AllowedTeams = payload.AllowedTeams
+	s.cfg.State.APIKeys[foundIdx].Admin = payload.Admin
+	s.cfg.State.APIKeys[foundIdx].Description = payload.Description
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -546,15 +681,35 @@ func (s *Server) handleDeleteConfigAPIKeys(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	s.mu.RLock()
+	_, isStatic := findByID(s.cfg.APIKeys, id, func(k config.APIKeyConfig) string { return k.ID })
+	s.mu.RUnlock()
+	if isStatic {
+		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
+		return
+	}
+
+	allowedTeams := allowedTeamsFromContext(r.Context())
+
 	s.mu.Lock()
-	foundIdx, found := findByID(s.cfg.APIKeys, id, func(k config.APIKeyConfig) string { return k.ID })
+	foundIdx, found := findByID(s.cfg.State.APIKeys, id, func(k config.APIKeyConfig) string { return k.ID })
 	if !found {
 		s.mu.Unlock()
 		respondWithError(w, http.StatusNotFound, "API key configuration not found")
 		return
 	}
 
-	s.cfg.APIKeys = removeAtIndex(s.cfg.APIKeys, foundIdx)
+	existingKey := s.cfg.State.APIKeys[foundIdx]
+
+	if len(allowedTeams) > 0 {
+		if !canManageKey(allowedTeams, existingKey) {
+			s.mu.Unlock()
+			respondWithError(w, http.StatusNotFound, "API key configuration not found")
+			return
+		}
+	}
+
+	s.cfg.State.APIKeys = removeAtIndex(s.cfg.State.APIKeys, foundIdx)
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -569,7 +724,7 @@ func isValidTeam(cfg *config.Config, teamID string) bool {
 	if teamID == "" {
 		return false
 	}
-	for _, t := range cfg.Teams {
+	for _, t := range cfg.AllTeams() {
 		if t.ID == teamID {
 			return true
 		}
@@ -587,15 +742,33 @@ func areTeamsValid(cfg *config.Config, teamIDs []string) bool {
 }
 
 func (s *Server) handleGetConfigTeams(w http.ResponseWriter, r *http.Request) {
+	allowedTeams := allowedTeamsFromContext(r.Context())
+
 	s.mu.RLock()
-	teams := make([]config.TeamConfig, len(s.cfg.Teams))
-	copy(teams, s.cfg.Teams)
+	allTeams := s.cfg.AllTeams()
 	s.mu.RUnlock()
 
-	respondWithJSON(w, http.StatusOK, teams)
+	var filtered []config.TeamConfig
+	for _, team := range allTeams {
+		if len(allowedTeams) > 0 {
+			if team.ID == "system" || isTeamAllowed(team.ID, allowedTeams) {
+				filtered = append(filtered, team)
+			}
+		} else {
+			filtered = append(filtered, team)
+		}
+	}
+
+	respondWithJSON(w, http.StatusOK, filtered)
 }
 
 func (s *Server) handlePostConfigTeams(w http.ResponseWriter, r *http.Request) {
+	allowedTeams := allowedTeamsFromContext(r.Context())
+	if len(allowedTeams) > 0 {
+		respondWithError(w, http.StatusForbidden, "forbidden: only root admins can manage team configurations")
+		return
+	}
+
 	payload, ok := decodeBody[config.TeamConfig](w, r)
 	if !ok {
 		return
@@ -613,7 +786,7 @@ func (s *Server) handlePostConfigTeams(w http.ResponseWriter, r *http.Request) {
 	payload.ID = uuidStr
 
 	s.mu.Lock()
-	s.cfg.Teams = append(s.cfg.Teams, payload)
+	s.cfg.State.Teams = append(s.cfg.State.Teams, payload)
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -631,21 +804,39 @@ func (s *Server) handlePutConfigTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	allowedTeams := allowedTeamsFromContext(r.Context())
+	if len(allowedTeams) > 0 {
+		respondWithError(w, http.StatusForbidden, "forbidden: only root admins can manage team configurations")
+		return
+	}
+
+	if id == "system" {
+		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
+		return
+	}
+	s.mu.RLock()
+	_, isStatic := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
+	s.mu.RUnlock()
+	if isStatic {
+		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
+		return
+	}
+
 	payload, ok := decodeBody[config.TeamConfig](w, r)
 	if !ok {
 		return
 	}
 
 	s.mu.Lock()
-	foundIdx, found := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
+	foundIdx, found := findByID(s.cfg.State.Teams, id, func(t config.TeamConfig) string { return t.ID })
 	if !found {
 		s.mu.Unlock()
 		respondWithError(w, http.StatusNotFound, "team configuration not found")
 		return
 	}
 
-	s.cfg.Teams[foundIdx].Name = payload.Name
-	s.cfg.Teams[foundIdx].Description = payload.Description
+	s.cfg.State.Teams[foundIdx].Name = payload.Name
+	s.cfg.State.Teams[foundIdx].Description = payload.Description
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {
@@ -663,33 +854,53 @@ func (s *Server) handleDeleteConfigTeams(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.mu.Lock()
-	foundIdx, found := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
-	if !found {
-		s.mu.Unlock()
-		respondWithError(w, http.StatusNotFound, "team configuration not found")
+	allowedTeams := allowedTeamsFromContext(r.Context())
+	if len(allowedTeams) > 0 {
+		respondWithError(w, http.StatusForbidden, "forbidden: only root admins can manage team configurations")
 		return
 	}
 
-	// Referential integrity check: check if the team is in use by any certificates or API keys
-	for _, cert := range s.cfg.Certificates {
+	if id == "system" {
+		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
+		return
+	}
+	s.mu.RLock()
+	_, isStatic := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
+	s.mu.RUnlock()
+	if isStatic {
+		respondWithError(w, http.StatusBadRequest, "cannot modify or delete statically configured resources via the API")
+		return
+	}
+
+	s.mu.RLock()
+	allCerts := s.cfg.AllCertificates()
+	allKeys := s.cfg.AllAPIKeys()
+	s.mu.RUnlock()
+
+	for _, cert := range allCerts {
 		if cert.TeamID == id {
-			s.mu.Unlock()
 			respondWithError(w, http.StatusBadRequest, "cannot delete team that is in use by certificates")
 			return
 		}
 	}
-	for _, key := range s.cfg.APIKeys {
+	for _, key := range allKeys {
 		for _, allowedTeam := range key.AllowedTeams {
 			if allowedTeam == id {
-				s.mu.Unlock()
 				respondWithError(w, http.StatusBadRequest, "cannot delete team that is in use by API keys")
 				return
 			}
 		}
 	}
 
-	s.cfg.Teams = removeAtIndex(s.cfg.Teams, foundIdx)
+	s.mu.Lock()
+	foundIdx, found := findByID(s.cfg.State.Teams, id, func(t config.TeamConfig) string { return t.ID })
+	if !found {
+		s.mu.Unlock()
+		respondWithError(w, http.StatusNotFound, "team configuration not found")
+		return
+	}
+
+	s.cfg.State.Teams = removeAtIndex(s.cfg.State.Teams, foundIdx)
 	s.mu.Unlock()
 
 	if err := s.saveAndReload(r.Context()); err != nil {

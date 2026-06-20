@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -36,6 +37,13 @@ type APIKeyConfig struct {
 	Admin          bool     `json:"admin"`
 }
 
+// State represents the runtime mutable configuration state.
+type State struct {
+	Certificates []CertConfig   `json:"certificates"`
+	APIKeys      []APIKeyConfig `json:"api_keys"`
+	Teams        []TeamConfig   `json:"teams"`
+}
+
 // Config holds application configuration.
 type Config struct {
 	Port               string         `json:"port"`
@@ -54,6 +62,39 @@ type Config struct {
 	CheckIntervalHours int            `json:"check_interval_hours"`
 	APIKeys            []APIKeyConfig `json:"api_keys"`
 	Teams              []TeamConfig   `json:"teams"`
+
+	State              State          `json:"-"`
+	StatePath          string         `json:"-"`
+}
+
+// AllCertificates returns the union of static and dynamic certificates.
+func (c *Config) AllCertificates() []CertConfig {
+	res := make([]CertConfig, 0, len(c.Certificates)+len(c.State.Certificates))
+	res = append(res, c.Certificates...)
+	res = append(res, c.State.Certificates...)
+	return res
+}
+
+// AllAPIKeys returns the union of static and dynamic API keys.
+func (c *Config) AllAPIKeys() []APIKeyConfig {
+	res := make([]APIKeyConfig, 0, len(c.APIKeys)+len(c.State.APIKeys))
+	res = append(res, c.APIKeys...)
+	res = append(res, c.State.APIKeys...)
+	return res
+}
+
+// AllTeams returns the union of static and dynamic teams, prepending the system team.
+func (c *Config) AllTeams() []TeamConfig {
+	res := []TeamConfig{
+		{
+			ID:          "system",
+			Name:        "System",
+			Description: "System team for global/unassigned resources",
+		},
+	}
+	res = append(res, c.Teams...)
+	res = append(res, c.State.Teams...)
+	return res
 }
 
 // Load loads configuration from environment variables with defaults.
@@ -89,13 +130,64 @@ func Load() *Config {
 		cfg.ACMEDirectoryURL = defaultACMEURL(cfg.ACMEProvider, cfg.Env)
 	}
 
-	if cfg.ensureIDs() {
-		if _, err := os.Stat(configPath); err == nil {
-			if err := cfg.Save(configPath); err != nil {
-				slog.Error("Failed to save auto-generated IDs to config file", "path", configPath, "error", err)
-			} else {
-				slog.Info("Auto-generated and persisted missing IDs in config file", "path", configPath)
-			}
+	// Validate static configuration items have explicit ID field on boot
+	for _, cc := range cfg.Certificates {
+		if cc.ID == "" {
+			slog.Error("Static configuration error: certificate missing id")
+			os.Exit(1)
+		}
+	}
+	for _, k := range cfg.APIKeys {
+		if k.ID == "" {
+			slog.Error("Static configuration error: api key missing id")
+			os.Exit(1)
+		}
+	}
+	for _, t := range cfg.Teams {
+		if t.ID == "" {
+			slog.Error("Static configuration error: team missing id")
+			os.Exit(1)
+		}
+	}
+
+	// Coerce static certificate team IDs to "system" if empty
+	for i := range cfg.Certificates {
+		if cfg.Certificates[i].TeamID == "" {
+			cfg.Certificates[i].TeamID = "system"
+		}
+	}
+
+	// Load dynamic state
+	statePath := os.Getenv("STATE_PATH")
+	if statePath == "" {
+		statePath = filepath.Join(filepath.Dir(configPath), "state.json")
+	}
+	cfg.StatePath = statePath
+
+	var state State
+	stateData, err := os.ReadFile(statePath)
+	if err == nil {
+		if err := json.Unmarshal(stateData, &state); err != nil {
+			slog.Error("Failed to unmarshal state JSON", "path", statePath, "error", err)
+		}
+	} else if !os.IsNotExist(err) {
+		slog.Error("Failed to read state file", "path", statePath, "error", err)
+	}
+	cfg.State = state
+
+	dirty := cfg.ensureDynamicIDs()
+
+	// Coerce dynamic cert team IDs to "system" if empty
+	for i := range cfg.State.Certificates {
+		if cfg.State.Certificates[i].TeamID == "" {
+			cfg.State.Certificates[i].TeamID = "system"
+			dirty = true
+		}
+	}
+
+	if dirty {
+		if err := cfg.SaveState(); err != nil {
+			slog.Error("Failed to save state with generated IDs or coerced team IDs", "path", statePath, "error", err)
 		}
 	}
 
@@ -166,28 +258,28 @@ func (cfg *Config) applyEnvOverrides() {
 	}
 }
 
-func (cfg *Config) ensureIDs() bool {
+func (cfg *Config) ensureDynamicIDs() bool {
 	dirty := false
-	for i := range cfg.Certificates {
-		if cfg.Certificates[i].ID == "" {
+	for i := range cfg.State.Certificates {
+		if cfg.State.Certificates[i].ID == "" {
 			if id, err := uuid.NewV7(); err == nil {
-				cfg.Certificates[i].ID = id.String()
+				cfg.State.Certificates[i].ID = id.String()
 				dirty = true
 			}
 		}
 	}
-	for i := range cfg.APIKeys {
-		if cfg.APIKeys[i].ID == "" {
+	for i := range cfg.State.APIKeys {
+		if cfg.State.APIKeys[i].ID == "" {
 			if id, err := uuid.NewV7(); err == nil {
-				cfg.APIKeys[i].ID = id.String()
+				cfg.State.APIKeys[i].ID = id.String()
 				dirty = true
 			}
 		}
 	}
-	for i := range cfg.Teams {
-		if cfg.Teams[i].ID == "" {
+	for i := range cfg.State.Teams {
+		if cfg.State.Teams[i].ID == "" {
 			if id, err := uuid.NewV7(); err == nil {
-				cfg.Teams[i].ID = id.String()
+				cfg.State.Teams[i].ID = id.String()
 				dirty = true
 			}
 		}
@@ -205,7 +297,7 @@ func defaultACMEURL(provider, env string) string {
 	return "https://acme-staging-v02.api.letsencrypt.org/directory"
 }
 
-// Save serializes the configuration as indented JSON and writes it to the specified filepath.
+// Save serializes the infrastructure configuration as indented JSON and writes it to the specified filepath.
 func (c *Config) Save(filepath string) error {
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -214,3 +306,11 @@ func (c *Config) Save(filepath string) error {
 	return os.WriteFile(filepath, data, 0644)
 }
 
+// SaveState serializes the runtime dynamic state as indented JSON.
+func (c *Config) SaveState() error {
+	data, err := json.MarshalIndent(c.State, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(c.StatePath, data, 0644)
+}

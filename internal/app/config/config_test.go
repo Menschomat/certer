@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -404,24 +405,52 @@ func TestSaveConfig(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_AutoGenerateIDs(t *testing.T) {
+func TestLoadConfig_MissingStaticID_Exit(t *testing.T) {
+	if os.Getenv("BE_CRASHER") == "1" {
+		configJSON := `{
+			"certificates": [
+				{
+					"primary": "missing-id.com"
+				}
+			]
+		}`
+		configPath := createTempConfig(t, configJSON)
+		os.Setenv("CONFIG_PATH", configPath)
+		Load()
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestLoadConfig_MissingStaticID_Exit")
+	cmd.Env = append(os.Environ(), "BE_CRASHER=1")
+	err := cmd.Run()
+	if e, ok := err.(*exec.ExitError); ok && !e.Success() {
+		return
+	}
+	t.Fatalf("process ran with err %v, want exit status 1", err)
+}
+
+func TestLoadConfig_StaticDynamicSplit(t *testing.T) {
 	configJSON := `{
 		"certificates": [
 			{
-				"primary": "auto-gen.com",
-				"sans": ["*.auto-gen.com"]
+				"id": "static-cert-1",
+				"primary": "static.com",
+				"team_id": "team-1"
+			},
+			{
+				"id": "static-cert-no-team",
+				"primary": "static-noteam.com"
 			}
 		],
 		"api_keys": [
 			{
-				"token": "secret-token",
-				"allowed_domains": ["auto-gen.com"]
+				"id": "static-key-1",
+				"token": "tok1"
 			}
 		],
 		"teams": [
 			{
-				"name": "Auto Gen Team",
-				"description": "Auto Gen Description"
+				"id": "team-1",
+				"name": "Team 1"
 			}
 		]
 	}`
@@ -430,33 +459,94 @@ func TestLoadConfig_AutoGenerateIDs(t *testing.T) {
 	os.Setenv("CONFIG_PATH", configPath)
 	defer os.Unsetenv("CONFIG_PATH")
 
+	// Create state.json in the same directory
+	stateDir := filepath.Dir(configPath)
+	statePath := filepath.Join(stateDir, "state.json")
+	stateJSON := `{
+		"certificates": [
+			{
+				"id": "dynamic-cert-1",
+				"primary": "dynamic.com",
+				"team_id": "team-1"
+			},
+			{
+				"id": "dynamic-cert-no-team",
+				"primary": "dynamic-noteam.com"
+			}
+		],
+		"api_keys": [
+			{
+				"token": "tok2"
+			}
+		],
+		"teams": [
+			{
+				"id": "team-2",
+				"name": "Team 2"
+			}
+		]
+	}`
+	if err := os.WriteFile(statePath, []byte(stateJSON), 0644); err != nil {
+		t.Fatalf("failed to write state.json: %v", err)
+	}
+
 	cfg := Load()
 
-	if len(cfg.Certificates) != 1 || cfg.Certificates[0].ID == "" {
-		t.Errorf("Expected auto-generated Certificate ID, got empty")
-	}
-	if len(cfg.APIKeys) != 1 || cfg.APIKeys[0].ID == "" {
-		t.Errorf("Expected auto-generated API Key ID, got empty")
-	}
-	if len(cfg.Teams) != 1 || cfg.Teams[0].ID == "" {
-		t.Errorf("Expected auto-generated Team ID, got empty")
+	// Assert merging on AllCertificates
+	allCerts := cfg.AllCertificates()
+	if len(allCerts) != 4 {
+		t.Errorf("expected 4 certificates in total, got %d", len(allCerts))
 	}
 
-	certID := cfg.Certificates[0].ID
-	apiKeyID := cfg.APIKeys[0].ID
-	teamID := cfg.Teams[0].ID
+	// Assert coercion of empty TeamID to "system"
+	for _, cert := range allCerts {
+		if cert.ID == "static-cert-no-team" || cert.ID == "dynamic-cert-no-team" {
+			if cert.TeamID != "system" {
+				t.Errorf("expected TeamID for %s to be coerced to 'system', got %q", cert.ID, cert.TeamID)
+			}
+		}
+	}
 
-	// Verify that the file on disk was updated and contains the generated IDs
-	cfgReloaded := Load()
-	if cfgReloaded.Certificates[0].ID != certID {
-		t.Errorf("Expected reloaded Certificate ID %q, got %q", certID, cfgReloaded.Certificates[0].ID)
+	// Assert merging on AllAPIKeys & check auto-generation of missing dynamic ID
+	allKeys := cfg.AllAPIKeys()
+	if len(allKeys) != 2 {
+		t.Errorf("expected 2 API keys, got %d", len(allKeys))
 	}
-	if cfgReloaded.APIKeys[0].ID != apiKeyID {
-		t.Errorf("Expected reloaded API Key ID %q, got %q", apiKeyID, cfgReloaded.APIKeys[0].ID)
+	var dynamicKey APIKeyConfig
+	for _, key := range allKeys {
+		if key.ID != "static-key-1" {
+			dynamicKey = key
+		}
 	}
-	if cfgReloaded.Teams[0].ID != teamID {
-		t.Errorf("Expected reloaded Team ID %q, got %q", teamID, cfgReloaded.Teams[0].ID)
+	if dynamicKey.ID == "" {
+		t.Errorf("expected auto-generated ID for dynamic key, got empty")
+	}
+
+	// Assert merging on AllTeams and presence of built-in system team
+	allTeams := cfg.AllTeams()
+	if len(allTeams) != 3 { // system + team-1 + team-2
+		t.Errorf("expected 3 teams, got %d: %+v", len(allTeams), allTeams)
+	}
+	if allTeams[0].ID != "system" {
+		t.Errorf("expected system team to be the first in AllTeams(), got %q", allTeams[0].ID)
+	}
+
+	// Test SaveState
+	cfg.State.Certificates = append(cfg.State.Certificates, CertConfig{
+		ID:      "dynamic-cert-2",
+		Primary: "new-dynamic.com",
+		TeamID:  "team-2",
+	})
+	if err := cfg.SaveState(); err != nil {
+		t.Fatalf("failed to save state: %v", err)
+	}
+
+	// Reload configuration and check that new dynamic cert is loaded
+	cfg2 := Load()
+	if len(cfg2.State.Certificates) != 3 {
+		t.Errorf("expected 3 dynamic certificates after reload, got %d", len(cfg2.State.Certificates))
 	}
 }
+
 
 

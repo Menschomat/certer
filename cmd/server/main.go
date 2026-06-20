@@ -32,11 +32,11 @@ func main() {
 
 	// Initialize and start background certificate scheduler
 	var scheduler *cert.Scheduler
-	if cfg.ACMEEmail != "" && len(cfg.Certificates) > 0 {
-		scheduler = cert.NewScheduler(issuer, cfg.ACMEEmail, cfg.Certificates, cfg.CertStorageDir, cfg.RenewThresholdDays, cfg.CheckIntervalHours)
+	if cfg.ACMEEmail != "" {
+		scheduler = cert.NewScheduler(issuer, cfg.ACMEEmail, cfg.AllCertificates(), cfg.CertStorageDir, cfg.RenewThresholdDays, cfg.CheckIntervalHours)
 		go scheduler.Start(serverCtx)
 	} else {
-		logger.Warn("Certificate scheduler not started: ACME_EMAIL and certificates list must be configured")
+		logger.Warn("Certificate scheduler not started: ACME_EMAIL must be configured")
 	}
 
 	// Setup API server and routes
