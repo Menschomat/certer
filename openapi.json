@@ -1,0 +1,814 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "CertCentral API",
+    "description": "API for managing ACME certificate issuance, API tokens, and team configurations.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "Primary API Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Token",
+        "description": "API Key token generated via the control plane API."
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "invalid request body"
+          }
+        }
+      },
+      "CertificateResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "018f6a9e-1234-789a-bcde-f0123456789a"
+          },
+          "domain": {
+            "type": "string",
+            "example": "example.com"
+          },
+          "sans": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["*.example.com", "www.example.com"]
+          },
+          "issued": {
+            "type": "boolean",
+            "example": true
+          },
+          "certificate": {
+            "type": "string",
+            "description": "PEM encoded public certificate block",
+            "example": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+          },
+          "private_key": {
+            "type": "string",
+            "description": "PEM encoded private key block",
+            "example": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+          },
+          "cert_filename": {
+            "type": "string",
+            "example": "example.com.crt"
+          },
+          "key_filename": {
+            "type": "string",
+            "example": "example.com.key"
+          }
+        }
+      },
+      "CertConfig": {
+        "type": "object",
+        "required": [
+          "primary"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "example": "018f6a9e-1234-789a-bcde-f0123456789a"
+          },
+          "primary": {
+            "type": "string",
+            "example": "example.com"
+          },
+          "sans": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["*.example.com"]
+          },
+          "team_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "018f6a9e-5678-789a-bcde-f0123456789a"
+          },
+          "description": {
+            "type": "string",
+            "example": "Production Web Cert"
+          }
+        }
+      },
+      "APIKeyConfig": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "example": "018f6a9e-1234-789a-bcde-f0123456789a"
+          },
+          "token": {
+            "type": "string",
+            "description": "Argon2id hashed token (not returned in cleartext after creation)",
+            "readOnly": true,
+            "example": "$argon2id$v=19$m=65536,t=3,p=2$..."
+          },
+          "description": {
+            "type": "string",
+            "example": "Deploy key for backend server"
+          },
+          "allowed_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["example.com"]
+          },
+          "allowed_teams": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": ["018f6a9e-5678-789a-bcde-f0123456789a"]
+          },
+          "admin": {
+            "type": "boolean",
+            "example": false
+          }
+        }
+      },
+      "APIKeyResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "018f6a9e-1234-789a-bcde-f0123456789a"
+          },
+          "token": {
+            "type": "string",
+            "example": "$argon2id$v=19$m=65536,t=3,p=2$..."
+          },
+          "cleartext_token": {
+            "type": "string",
+            "description": "Cleartext secure token generated on key creation (this is shown ONLY once).",
+            "example": "4a15998dfc382b6ae49ef07d722bf05a..."
+          },
+          "description": {
+            "type": "string",
+            "example": "Deploy key for backend server"
+          },
+          "allowed_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["example.com"]
+          },
+          "allowed_teams": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["018f6a9e-5678-789a-bcde-f0123456789a"]
+          },
+          "admin": {
+            "type": "boolean",
+            "example": false
+          }
+        }
+      },
+      "TeamConfig": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "example": "018f6a9e-5678-789a-bcde-f0123456789a"
+          },
+          "name": {
+            "type": "string",
+            "example": "Frontend Team"
+          },
+          "description": {
+            "type": "string",
+            "example": "Coordinates web interface certificates"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health status",
+        "description": "Simple health endpoint returning the status of the service.",
+        "responses": {
+          "200": {
+            "description": "Healthy response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "up"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hello": {
+      "get": {
+        "summary": "Hello World",
+        "description": "Greeting endpoint.",
+        "responses": {
+          "200": {
+            "description": "Hello greeting response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Hello, World!"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/certificates": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Scoped Certificates",
+        "description": "Retrieve issued PEM certificate payloads filtered by domains and teams permitted by the bearer token.",
+        "responses": {
+          "200": {
+            "description": "A list of certificates permitted for retrieval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CertificateResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized access due to missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden attempt to fetch certificates with an admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/certificates": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Certificate Configurations",
+        "description": "List all configured certificate groups (Admin permission required).",
+        "responses": {
+          "200": {
+            "description": "List of configured certificates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CertConfig"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create Certificate Configuration",
+        "description": "Configure a new certificate domain definition to trigger ACME background renewal (Admin permission required).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CertConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input parameters (e.g. missing primary domain or invalid/missing team_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/certificates/{id}": {
+      "put": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Certificate Configuration",
+        "description": "Update details such as SANs, team association, and description of a certificate (Admin permission required).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Certificate Configuration UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CertConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated successfully"
+          },
+          "400": {
+            "description": "Bad Request (e.g. invalid request body or missing/invalid team_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Certificate configuration not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete Certificate Configuration",
+        "description": "Remove certificate domain config. File cleanup will follow automatically in background task (Admin permission required).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Certificate Configuration UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted successfully"
+          },
+          "404": {
+            "description": "Certificate configuration not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/api_keys": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List API Keys",
+        "description": "List all configured API tokens and their metadata (Admin permission required).",
+        "responses": {
+          "200": {
+            "description": "List of keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/APIKeyConfig"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create API Key",
+        "description": "Generate a new access token for clients. Returns the cleartext token string exactly once (Admin permission required).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/APIKeyConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIKeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input parameters (e.g. one or more allowed_teams are invalid)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/api_keys/{id}": {
+      "put": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update API Key Permissions",
+        "description": "Modify allowed domains, team scoping, description, or admin privileges for a key (Admin permission required).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "API Key UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/APIKeyConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated successfully"
+          },
+          "400": {
+            "description": "Invalid input parameters (e.g. one or more allowed_teams are invalid)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API key configuration not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete API Key Configuration",
+        "description": "Revoke an API key token by deleting its config entry (Admin permission required).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "API Key UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted successfully"
+          },
+          "404": {
+            "description": "API key configuration not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/teams": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Teams",
+        "description": "List all configured teams (Admin permission required).",
+        "responses": {
+          "200": {
+            "description": "List of teams",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TeamConfig"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create Team Configuration",
+        "description": "Add a new team to config (Admin permission required).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Team config created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input parameters (e.g. name is required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/teams/{id}": {
+      "put": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Team Configuration",
+        "description": "Update details like team name or description (Admin permission required).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Team Configuration UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated successfully"
+          },
+          "404": {
+            "description": "Team configuration not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete Team Configuration",
+        "description": "Remove a team config. Fails if the team is still referenced by any certificates or API keys (Admin permission required).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Team Configuration UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted successfully"
+          },
+          "400": {
+            "description": "Bad Request (e.g. cannot delete team that is in use by certificates or API keys)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Team configuration not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
