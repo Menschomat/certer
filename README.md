@@ -7,37 +7,77 @@ Production-grade, automated SSL/TLS certificate management service in Go. Integr
 ## Architecture
 
 ```mermaid
-graph TD
-    subgraph Config
-        JSON[config.json]
-        Env[Environment Variables]
+flowchart TB
+    %% Styling definitions
+    classDef actor fill:#ececff,stroke:#9370db,stroke-width:2px;
+    classDef internal fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
+    classDef external fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
+    classDef storage fill:#efebe9,stroke:#5d4037,stroke-width:2px;
+    classDef tool fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
+
+    %% Actors & External Entities
+    subgraph Actors ["Actors & External Systems"]
+        admin["👤 Admin (Infrastructure / SecOps)"]:::actor
+        client["💻 App Client (Fetch TLS Certs)"]:::actor
+        acme["🌐 ACME CA (Let's Encrypt / ZeroSSL)"]:::external
+        dns["☁️ DNS Provider (Cloudflare / Hetzner)"]:::external
     end
 
-    subgraph Service["Bootstrap (Main Startup)"]
-        Startup[Main Bootstrapper]
-        JSON --> Startup
-        Env --> Startup
+    %% Certer System Boundary
+    subgraph Certer ["Certer System Daemon"]
+        %% Bootstrap
+        boot["🚀 Main Bootstrapper"]:::internal
+        
+        %% API Server
+        subgraph WebServer ["Web API Server"]
+            api["🔌 api.Server<br>(HTTP:8080 / HTTPS:8443)"]:::internal
+            auth["🔒 Argon2id Authenticator"]:::internal
+            router["🛣️ Table-driven Mux"]:::internal
+            filter["🔍 Certificate & Team Filter"]:::internal
+        end
+
+        %% Scheduler
+        subgraph BackgroundWorker ["Background Worker"]
+            sched["⏰ cert.Scheduler<br>(Renewal Engine)"]:::internal
+            issuer["📜 cert.Issuer<br>(Lego ACME Wrapper)"]:::internal
+        end
+
+        %% Files / Storage
+        subgraph Storage ["Persisted Storage"]
+            config["📄 config.json"]:::storage
+            certsDir["📁 certs/ directory<br>(*.crt, *.key)"]:::storage
+        end
     end
 
-    subgraph BackgroundWorker["Background Worker"]
-        Sched[cert.Scheduler] -->|Examine Expiry / Config Changes| Issuer[cert.Issuer]
-        Issuer -->|DNS-01 / HTTP-01 Challenge| ACME[ACME CA Server]
+    %% CLI Tools
+    subgraph CLITools ["CLI Utilities (Container Native)"]
+        keygen["🔑 keygen CLI<br>(Argon2id Hash Generator)"]:::tool
+        audit["📊 audit CLI<br>(Local Audit Logger)"]:::tool
     end
 
-    subgraph WebServer["API Web Server"]
-        API[api.Server] -->|GET /api/v1/certificates| Auth{Argon2id Auth}
-        Auth -->|Authorized| Filter[Filter & Return Certificates]
-    end
+    %% Connections - Startup
+    config -->|1. Loaded by| boot
+    boot -->|2. Spawns| sched
+    boot -->|2. Starts| api
 
-    subgraph Storage["Certificate Storage"]
-        Certs[./certs/*.crt, *.key]
-    end
+    %% Connections - Admin & Configuration
+    admin -->|Manage Config / Keys / Teams| api
+    admin -->|Generate API key hashes| keygen
+    admin -->|Query current state / report| audit
+    audit -->|Authed requests| api
 
-    Startup -->|Spawns| Sched
-    Startup -->|Starts| API
-    
-    ACME -->|Writes PEMs| Certs
-    Filter -->|Reads PEMs| Certs
+    %% Connections - Client Fetch
+    client -->|GET /api/v1/certificates| api
+    api -->|Verify Token| auth
+    auth -->|Map Route| router
+    router -->|Apply Scope| filter
+    filter -->|Read PEMs| certsDir
+
+    %% Connections - Background Renewal
+    sched -->|Check expiry / configs| issuer
+    issuer -->|DNS-01 Challenge| dns
+    issuer -->|Validate & Issue| acme
+    acme -->|Write new PEMs| certsDir
 ```
 
 ---
@@ -103,7 +143,7 @@ cp example.config.json config.json
       "id": "019035a1-7b00-7521-8280-60b6adbf47ec",
       "token": "$argon2id$v=19$m=65536,t=3,p=2$5e3EMry5f9M8wHWfOI3uOA$EoHEmZt426KKoow/3j7a4o0Yo/oKdZwGpNy+FTowmTs",
       "description": "Example admin API key",
-      "allowed_domains": ["example.com"],
+      "allowed_certificates": ["019035a1-7b00-7521-8280-60b6adbf47eb"],
       "allowed_teams": ["019035a1-7b00-7521-8280-60b6adbf47ea"],
       "admin": true
     }
@@ -132,7 +172,7 @@ cp example.config.json config.json
 | `check_interval_hours` | int | `24` | `CHECK_INTERVAL_HOURS` | Hours between checking local certificate status |
 | `teams` | list | *None* | *None* | Target teams metadata list. Each object contains `id` (UUIDv7), `name` (string), and `description` (string) |
 | `certificates` | list | *None* | *None* | Target certificates list. Each object contains `id` (UUIDv7), `primary` (domain name), `sans` (list of alternative domain names), `team_id` (UUIDv7 team identifier), and `description` (string) |
-| `api_keys` | list | *None* | *None* | Authorized API keys list. Each object contains `id` (UUIDv7), `token` (Argon2id hash of the token), `description` (string), `allowed_domains` (list of strings), `allowed_teams` (list of UUIDv7 team identifiers), and `admin` (boolean) |
+| `api_keys` | list | *None* | *None* | Authorized API keys list. Each object contains `id` (UUIDv7), `token` (Argon2id hash of the token), `description` (string), `allowed_certificates` (list of UUIDv7 certificate identifiers), `allowed_teams` (list of UUIDv7 team identifiers), and `admin` (boolean) |
 
 ### Dual HTTP & HTTPS Listeners
 
@@ -353,7 +393,8 @@ Retrieves configured API keys (tokens are redacted).
     {
       "id": "019035a1-7b00-7521-8280-60b6adbf47ec",
       "description": "Example admin API key",
-      "allowed_domains": ["example.com"],
+      "allowed_certificates": ["019035a1-7b00-7521-8280-60b6adbf47eb"],
+      "allowed_teams": ["019035a1-7b00-7521-8280-60b6adbf47ea"],
       "admin": true
     }
   ]
@@ -366,7 +407,8 @@ Generates a new API key configuration and returns a generated UUID v7 and secure
   ```json
   {
     "description": "Deploy Key for team B",
-    "allowed_domains": ["team-b.com"],
+    "allowed_certificates": ["019035a1-7b00-7521-8280-60b6adbf47eb"],
+    "allowed_teams": ["019035a1-7b00-7521-8280-60b6adbf47ea"],
     "admin": false
   }
   ```
@@ -376,19 +418,21 @@ Generates a new API key configuration and returns a generated UUID v7 and secure
     "id": "019035a2-9eef-70a0-88cb-e8a0a9db4e21",
     "cleartext_token": "certc_9f02a...c0378",
     "description": "Deploy Key for team B",
-    "allowed_domains": ["team-b.com"],
+    "allowed_certificates": ["019035a1-7b00-7521-8280-60b6adbf47eb"],
+    "allowed_teams": ["019035a1-7b00-7521-8280-60b6adbf47ea"],
     "admin": false
   }
   ```
 
 #### 5.3 Update API Key
-Updates configuration of an API key by ID (e.g. allowed domains, admin role, or description).
+Updates configuration of an API key by ID (e.g. allowed certificates/teams, admin role, or description).
 - **Endpoint**: `PUT /api/v1/config/api_keys/{id}`
 - **Payload**:
   ```json
   {
     "description": "Updated Deploy Key for team B",
-    "allowed_domains": ["team-b.com", "shared.com"],
+    "allowed_certificates": ["019035a1-7b00-7521-8280-60b6adbf47eb"],
+    "allowed_teams": ["019035a1-7b00-7521-8280-60b6adbf47ea"],
     "admin": false
   }
   ```
