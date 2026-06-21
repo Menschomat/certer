@@ -548,5 +548,67 @@ func TestLoadConfig_StaticDynamicSplit(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_SSL(t *testing.T) {
+	// 1. JSON parsing and default values
+	t.Run("json_parsing_and_defaults", func(t *testing.T) {
+		configJSON := `{
+			"ssl_cert_id": "019035a1-7b00-7521-8280-60b6adbf47eb"
+		}`
+		configPath := createTempConfig(t, configJSON)
+		os.Setenv("CONFIG_PATH", configPath)
+		defer os.Unsetenv("CONFIG_PATH")
+
+		cfg := Load()
+		if cfg.SSLCertID != "019035a1-7b00-7521-8280-60b6adbf47eb" {
+			t.Errorf("Expected SSLCertID '019035a1-7b00-7521-8280-60b6adbf47eb', got %q", cfg.SSLCertID)
+		}
+		if cfg.HTTPSPort != "8443" {
+			t.Errorf("Expected default HTTPSPort '8443', got %q", cfg.HTTPSPort)
+		}
+	})
+
+	// 2. Explicit https_port in JSON
+	t.Run("explicit_https_port_in_json", func(t *testing.T) {
+		configJSON := `{
+			"https_port": "9443",
+			"ssl_cert_id": "019035a1-7b00-7521-8280-60b6adbf47eb"
+		}`
+		configPath := createTempConfig(t, configJSON)
+		os.Setenv("CONFIG_PATH", configPath)
+		defer os.Unsetenv("CONFIG_PATH")
+
+		cfg := Load()
+		if cfg.HTTPSPort != "9443" {
+			t.Errorf("Expected HTTPSPort '9443', got %q", cfg.HTTPSPort)
+		}
+	})
+
+	// 3. Env override for HTTPS_PORT and static check for SSL_CERT_ID (no env override for it)
+	t.Run("env_override_https_port", func(t *testing.T) {
+		configJSON := `{
+			"https_port": "9443",
+			"ssl_cert_id": "019035a1-7b00-7521-8280-60b6adbf47eb"
+		}`
+		configPath := createTempConfig(t, configJSON)
+		os.Setenv("CONFIG_PATH", configPath)
+		os.Setenv("HTTPS_PORT", "9999")
+		os.Setenv("SSL_CERT_ID", "should-not-override")
+		defer func() {
+			os.Unsetenv("CONFIG_PATH")
+			os.Unsetenv("HTTPS_PORT")
+			os.Unsetenv("SSL_CERT_ID")
+		}()
+
+		cfg := Load()
+		if cfg.HTTPSPort != "9999" {
+			t.Errorf("Expected HTTPSPort '9999' from env override, got %q", cfg.HTTPSPort)
+		}
+		// ssl_cert_id must remain the one from JSON, ignoring the env variable
+		if cfg.SSLCertID != "019035a1-7b00-7521-8280-60b6adbf47eb" {
+			t.Errorf("Expected SSLCertID '019035a1-7b00-7521-8280-60b6adbf47eb' from JSON, got %q", cfg.SSLCertID)
+		}
+	})
+}
+
 
 

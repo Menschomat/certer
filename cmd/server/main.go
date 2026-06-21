@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -51,6 +53,48 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	// Configure HTTPS http.Server with production timeouts
+	srvHTTPS := &http.Server{
+		Addr:         ":" + cfg.HTTPSPort,
+		Handler:      srvAPI.Routes(),
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	var tlsCert tls.Certificate
+	var loadedReal bool
+
+	if cfg.SSLCertID != "" {
+		certPath := filepath.Join(cfg.CertStorageDir, cfg.SSLCertID+".crt")
+		keyPath := filepath.Join(cfg.CertStorageDir, cfg.SSLCertID+".key")
+
+		if _, errCert := os.Stat(certPath); errCert == nil {
+			if _, errKey := os.Stat(keyPath); errKey == nil {
+				if cert, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
+					tlsCert = cert
+					loadedReal = true
+				} else {
+					logger.Error("Failed to load configured SSL certificate key pair", "error", err)
+				}
+			}
+		}
+	}
+
+	if !loadedReal {
+		logger.Info("Generating temporary self-signed certificate for HTTPS")
+		cert, err := generateSelfSignedCert()
+		if err != nil {
+			logger.Error("Failed to generate self-signed certificate", "error", err)
+			os.Exit(1)
+		}
+		tlsCert = cert
+	}
+
+	srvHTTPS.TLSConfig = &tls.Config{
+		Certificates: []tls.Certificate{tlsCert},
+	}
+
 	// Listen for syscall signals for process shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
@@ -70,19 +114,36 @@ func main() {
 			}
 		}()
 
-		// Trigger graceful shutdown
+		// Trigger graceful shutdown of both servers
+		var shutdownErr error
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.Error("Shutdown failed", "error", err)
+			shutdownErr = err
+			logger.Error("HTTP Shutdown failed", "error", err)
+		}
+		if err := srvHTTPS.Shutdown(shutdownCtx); err != nil {
+			shutdownErr = err
+			logger.Error("HTTPS Shutdown failed", "error", err)
+		}
+		if shutdownErr != nil {
 			os.Exit(1)
 		}
 		serverStopCtx()
 	}()
 
-	// Start server
-	logger.Info("Server is running", "addr", srv.Addr)
-	err := srv.ListenAndServe()
+	// Start HTTP server in the background
+	go func() {
+		logger.Info("HTTP Server is running", "addr", srv.Addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("HTTP Server listening failed", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	// Start HTTPS server in the foreground
+	logger.Info("HTTPS Server is running", "addr", srvHTTPS.Addr, "using_real_cert", loadedReal)
+	err := srvHTTPS.ListenAndServeTLS("", "")
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logger.Error("Server listening failed", "error", err)
+		logger.Error("HTTPS Server listening failed", "error", err)
 		os.Exit(1)
 	}
 

@@ -116,6 +116,8 @@ cp example.config.json config.json
 | Field | Type | Default | Env Var | Description |
 |---|---|---|---|---|
 | `port` | string | `"8080"` | `PORT` | Port for the HTTP API server |
+| `https_port` | string | `"8443"` | `HTTPS_PORT` | Port for the HTTPS API server |
+| `ssl_cert_id` | string | *None* | *None* | Optional certificate configuration ID to use for serving HTTPS |
 | `env` | string | `"development"` | `ENV` | Service environment (`development` or `production`) |
 | `acme_provider` | string | `"letsencrypt"` | `ACME_PROVIDER` | ACME provider (`letsencrypt` or `zerossl`) |
 | `acme_directory_url` | string | *(dynamic)* | `ACME_DIRECTORY_URL` | Directory URL of the ACME CA server |
@@ -131,6 +133,16 @@ cp example.config.json config.json
 | `teams` | list | *None* | *None* | Target teams metadata list. Each object contains `id` (UUIDv7), `name` (string), and `description` (string) |
 | `certificates` | list | *None* | *None* | Target certificates list. Each object contains `id` (UUIDv7), `primary` (domain name), `sans` (list of alternative domain names), `team_id` (UUIDv7 team identifier), and `description` (string) |
 | `api_keys` | list | *None* | *None* | Authorized API keys list. Each object contains `id` (UUIDv7), `token` (Argon2id hash of the token), `description` (string), `allowed_domains` (list of strings), `allowed_teams` (list of UUIDv7 team identifiers), and `admin` (boolean) |
+
+### Dual HTTP & HTTPS Listeners
+
+By default, `certer` boots and binds to both an HTTP port (`port`, defaults to `8080`) and an HTTPS port (`https_port`, defaults to `8443`) simultaneously.
+
+To configure SSL/TLS for the HTTPS endpoint:
+1. Provide a managed certificate configuration ID using `"ssl_cert_id"` inside `config.json`.
+2. On boot, the server checks if the matching certificate and private key files (e.g. `certs/{ssl_cert_id}.crt` and `certs/{ssl_cert_id}.key`) exist.
+3. If they exist, they are loaded to serve the HTTPS endpoint.
+4. If they do not exist (or if `ssl_cert_id` is not configured), the server dynamically generates a temporary, self-signed P-256 ECDSA certificate in memory. This ensures the HTTPS endpoint remains up and functional immediately upon container startup.
 
 ### ACME Provider Configuration
 

@@ -62,6 +62,8 @@ type Config struct {
 	CheckIntervalHours int            `json:"check_interval_hours"`
 	APIKeys            []APIKeyConfig `json:"api_keys"`
 	Teams              []TeamConfig   `json:"teams"`
+	HTTPSPort          string         `json:"https_port"`
+	SSLCertID          string         `json:"ssl_cert_id"`
 
 	State              State          `json:"-"`
 	StatePath          string         `json:"-"`
@@ -108,6 +110,7 @@ func Load() *Config {
 		ChallengePort:      "5002",
 		RenewThresholdDays: 30,
 		CheckIntervalHours: 24,
+		HTTPSPort:          "8443",
 	}
 
 	configPath := os.Getenv("CONFIG_PATH")
@@ -229,6 +232,8 @@ func (cfg *Config) mergeFromJSON(jsonCfg Config) {
 	mergeSlice(&cfg.Certificates, jsonCfg.Certificates)
 	mergeSlice(&cfg.APIKeys, jsonCfg.APIKeys)
 	mergeSlice(&cfg.Teams, jsonCfg.Teams)
+	mergeString(&cfg.HTTPSPort, jsonCfg.HTTPSPort)
+	mergeString(&cfg.SSLCertID, jsonCfg.SSLCertID)
 }
 
 func (cfg *Config) applyEnvOverrides() {
@@ -241,6 +246,7 @@ func (cfg *Config) applyEnvOverrides() {
 	mergeString(&cfg.CertStorageDir, os.Getenv("CERT_STORAGE_DIR"))
 	mergeString(&cfg.ChallengePort, os.Getenv("CHALLENGE_PORT"))
 	mergeString(&cfg.ACMEEmail, os.Getenv("ACME_EMAIL"))
+	mergeString(&cfg.HTTPSPort, os.Getenv("HTTPS_PORT"))
 	mergeString(&cfg.DNSProvider, os.Getenv("DNS_PROVIDER"))
 
 	if envResolvers := os.Getenv("DNS_RESOLVERS"); envResolvers != "" {
