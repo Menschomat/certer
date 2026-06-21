@@ -211,7 +211,7 @@ func (s *Scheduler) ReloadConfig(ctx context.Context, certificates []config.Cert
 
 	slog.Info("Scheduler configuration reloaded, triggering immediate check and renew cycle")
 	go func() {
-		if err := s.CheckAndRenew(ctx); err != nil {
+		if err := s.CheckAndRenew(context.Background()); err != nil {
 			slog.Error("Failed to execute check and renew cycle after reload", "error", err)
 		}
 	}()
