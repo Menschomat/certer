@@ -82,8 +82,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Trim trailing slash from url
-	url = strings.TrimSuffix(url, "/")
+	// Normalize target URL (ensure scheme and trim trailing slash)
+	url = normalizeURL(url)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -218,3 +218,14 @@ func formatJSON(data *AuditData) (string, error) {
 	}
 	return string(bytes), nil
 }
+
+func normalizeURL(url string) string {
+	if url == "" {
+		return ""
+	}
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "http://" + url
+	}
+	return strings.TrimSuffix(url, "/")
+}
+

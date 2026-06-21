@@ -122,3 +122,25 @@ func TestFetchAuditData(t *testing.T) {
 		}
 	})
 }
+
+func TestNormalizeURL(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"http://localhost:8080", "http://localhost:8080"},
+		{"https://certer.menscho.space/", "https://certer.menscho.space"},
+		{"certer.menscho.space", "http://certer.menscho.space"},
+		{"certer.menscho.space/", "http://certer.menscho.space"},
+		{"http://127.0.0.1/", "http://127.0.0.1"},
+	}
+
+	for _, tc := range tests {
+		got := normalizeURL(tc.input)
+		if got != tc.expected {
+			t.Errorf("normalizeURL(%q) = %q; expected %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
