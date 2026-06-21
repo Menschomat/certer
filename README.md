@@ -202,7 +202,7 @@ cp example.config.json config.json
 | `eab_hmac` | string | *None* | `EAB_HMAC` | HMAC key for External Account Binding (EAB) |
 | `cert_storage_dir` | string | `"./certs"` | `CERT_STORAGE_DIR` | Directory where certificates and keys are persisted |
 | `challenge_port` | string | `"5002"` | `CHALLENGE_PORT` | HTTP port for the HTTP-01 challenge solver |
-| `dns_provider` | string | *None* | `DNS_PROVIDER` | DNS provider (`cloudflare`, `hetzner`, or blank for HTTP-01 fallback) |
+| `dns_provider` | string | *None* | `DNS_PROVIDER` | DNS provider name (e.g. `cloudflare`, `hetzner`, `route53`, or any Lego-supported provider; blank for HTTP-01 fallback) |
 | `dns_resolvers` | list | *None* | `DNS_RESOLVERS` | DNS resolvers (comma-separated list) to verify DNS-01 propagation |
 | `renew_threshold_days` | int | `30` | `RENEW_THRESHOLD_DAYS` | Days before expiry to trigger automatic renewal |
 | `check_interval_hours` | int | `24` | `CHECK_INTERVAL_HOURS` | Hours between checking local certificate status |
@@ -237,7 +237,9 @@ ZeroSSL can be configured in two ways:
 Provide configuration parameters, custom resolvers, and API credentials for your DNS and ACME providers as environment variables:
 ```bash
 # DNS Solver Configuration
-# Choose challenge solver: cloudflare, hetzner, or leave blank to fall back to HTTP-01
+# Choose challenge solver: cloudflare, hetzner, route53, or any Lego-supported provider (leave blank to fall back to HTTP-01).
+# For the full list of 80+ supported providers and their required environment variables, see:
+# https://go-acme.github.io/lego/dns/index.html
 export DNS_PROVIDER="cloudflare"
 
 # Optional comma-separated list of custom recursive DNS resolvers (e.g. to bypass local DNS caching or local resolution issues)

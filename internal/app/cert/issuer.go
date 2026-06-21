@@ -15,8 +15,7 @@ import (
 	"github.com/go-acme/lego/v5/challenge/dns01"
 	"github.com/go-acme/lego/v5/challenge/http01"
 	"github.com/go-acme/lego/v5/lego"
-	"github.com/go-acme/lego/v5/providers/dns/cloudflare"
-	"github.com/go-acme/lego/v5/providers/dns/hetzner"
+	"github.com/go-acme/lego/v5/providers/dns"
 	"github.com/go-acme/lego/v5/registration"
 )
 
@@ -132,26 +131,7 @@ func (i *Issuer) Issue(ctx context.Context, email string, domains []string, file
 }
 
 func (i *Issuer) setupChallengeProvider(client *lego.Client, dnsProvider string) error {
-	switch dnsProvider {
-	case "cloudflare":
-		provider, err := cloudflare.NewDNSProvider()
-		if err != nil {
-			return fmt.Errorf("failed to initialize cloudflare provider: %w", err)
-		}
-		err = client.Challenge.SetDNS01Provider(&syncProvider{provider: provider})
-		if err != nil {
-			return fmt.Errorf("failed to set cloudflare dns challenge: %w", err)
-		}
-	case "hetzner":
-		provider, err := hetzner.NewDNSProvider()
-		if err != nil {
-			return fmt.Errorf("failed to initialize hetzner provider: %w", err)
-		}
-		err = client.Challenge.SetDNS01Provider(&syncProvider{provider: provider})
-		if err != nil {
-			return fmt.Errorf("failed to set hetzner dns challenge: %w", err)
-		}
-	default:
+	if dnsProvider == "" {
 		// Fallback to HTTP-01
 		port := i.challengePort
 		if port == "" {
@@ -161,6 +141,18 @@ func (i *Issuer) setupChallengeProvider(client *lego.Client, dnsProvider string)
 		if err != nil {
 			return fmt.Errorf("failed to set http-01 challenge: %w", err)
 		}
+		return nil
+	}
+
+	// Dynamically initialize any of the 80+ Lego DNS providers by name
+	provider, err := dns.NewDNSChallengeProviderByName(dnsProvider)
+	if err != nil {
+		return fmt.Errorf("failed to initialize dns provider %q: %w", dnsProvider, err)
+	}
+
+	err = client.Challenge.SetDNS01Provider(&syncProvider{provider: provider})
+	if err != nil {
+		return fmt.Errorf("failed to set dns challenge for provider %q: %w", dnsProvider, err)
 	}
 	return nil
 }
