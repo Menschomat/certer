@@ -26,11 +26,28 @@ func TestControlPlaneAPI_APIKeys(t *testing.T) {
 				Admin: true,
 			},
 		},
+		Certificates: []config.CertConfig{
+			{
+				ID:      "cert-id-1",
+				Primary: "existing.com",
+				TeamID:  "team-id-1",
+			},
+			{
+				ID:      "cert-id-2",
+				Primary: "other.com",
+				TeamID:  "team-id-2",
+			},
+		},
 		Teams: []config.TeamConfig{
 			{
 				ID:          "team-id-1",
 				Name:        "Team 1",
 				Description: "First test team",
+			},
+			{
+				ID:          "team-id-2",
+				Name:        "Team 2",
+				Description: "Second test team",
 			},
 		},
 	}
@@ -70,10 +87,10 @@ func TestControlPlaneAPI_APIKeys(t *testing.T) {
 	var newKeyID string
 	t.Run("POST API Key Configuration - Success", func(t *testing.T) {
 		newKey := config.APIKeyConfig{
-			Description:    "New Deploy Key",
-			AllowedDomains: []string{"newdomain.com"},
-			AllowedTeams:   []string{"team-id-1"},
-			Admin:          false,
+			Description:         "New Deploy Key",
+			AllowedCertificates: []string{"cert-id-1"},
+			AllowedTeams:        []string{"team-id-1"},
+			Admin:               false,
 		}
 		body, _ := json.Marshal(newKey)
 		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/config/api_keys", bytes.NewReader(body))
@@ -90,13 +107,13 @@ func TestControlPlaneAPI_APIKeys(t *testing.T) {
 		}
 
 		type apiResponse struct {
-			ID             string   `json:"id"`
-			Token          string   `json:"token"`
-			CleartextToken string   `json:"cleartext_token"`
-			Description    string   `json:"description"`
-			AllowedDomains []string `json:"allowed_domains"`
-			AllowedTeams   []string `json:"allowed_teams"`
-			Admin          bool     `json:"admin"`
+			ID                  string   `json:"id"`
+			Token               string   `json:"token"`
+			CleartextToken      string   `json:"cleartext_token"`
+			Description         string   `json:"description"`
+			AllowedCertificates []string `json:"allowed_certificates"`
+			AllowedTeams        []string `json:"allowed_teams"`
+			Admin               bool     `json:"admin"`
 		}
 		var resp apiResponse
 		if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
@@ -122,6 +139,9 @@ func TestControlPlaneAPI_APIKeys(t *testing.T) {
 				if len(k.AllowedTeams) != 1 || k.AllowedTeams[0] != "team-id-1" {
 					t.Errorf("Expected allowed_teams to contain 'team-id-1', got %+v", k.AllowedTeams)
 				}
+				if len(k.AllowedCertificates) != 1 || k.AllowedCertificates[0] != "cert-id-1" {
+					t.Errorf("Expected allowed_certificates to contain 'cert-id-1', got %+v", k.AllowedCertificates)
+				}
 			}
 		}
 		if !found {
@@ -131,10 +151,10 @@ func TestControlPlaneAPI_APIKeys(t *testing.T) {
 
 	t.Run("PUT API Key Configuration - Success", func(t *testing.T) {
 		updatedKey := config.APIKeyConfig{
-			Description:    "Updated Deploy Key",
-			AllowedDomains: []string{"updated-domain.com"},
-			AllowedTeams:   []string{"team-id-1"},
-			Admin:          true,
+			Description:         "Updated Deploy Key",
+			AllowedCertificates: []string{"cert-id-1"},
+			AllowedTeams:        []string{"team-id-1"},
+			Admin:               true,
 		}
 		body, _ := json.Marshal(updatedKey)
 		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config/api_keys/"+newKeyID, bytes.NewReader(body))
@@ -153,7 +173,7 @@ func TestControlPlaneAPI_APIKeys(t *testing.T) {
 		loadedCfg := config.Load()
 		for _, k := range loadedCfg.AllAPIKeys() {
 			if k.ID == newKeyID {
-				if !k.Admin || len(k.AllowedDomains) != 1 || k.AllowedDomains[0] != "updated-domain.com" || k.Description != "Updated Deploy Key" || len(k.AllowedTeams) != 1 || k.AllowedTeams[0] != "team-id-1" {
+				if !k.Admin || len(k.AllowedCertificates) != 1 || k.AllowedCertificates[0] != "cert-id-1" || k.Description != "Updated Deploy Key" || len(k.AllowedTeams) != 1 || k.AllowedTeams[0] != "team-id-1" {
 					t.Errorf("Expected updated key settings, got: %+v", k)
 				}
 			}
@@ -332,6 +352,48 @@ func TestScopedAdmin_APIKeys(t *testing.T) {
 
 		if res.StatusCode != http.StatusNotFound {
 			t.Errorf("Expected 404 Not Found, got %d", res.StatusCode)
+		}
+	})
+
+	t.Run("POST API Key Configuration - Missing Certificate (400)", func(t *testing.T) {
+		payload := config.APIKeyConfig{
+			Description:         "Invalid Key",
+			AllowedCertificates: []string{"non-existent-cert"},
+			AllowedTeams:        []string{"team-id-1"},
+		}
+		body, _ := json.Marshal(payload)
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/config/api_keys", bytes.NewReader(body))
+		req.Header.Set("Authorization", authHeader)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusBadRequest {
+			t.Errorf("Expected 400 Bad Request, got %d", res.StatusCode)
+		}
+	})
+
+	t.Run("POST API Key Configuration - Cert Team Mismatch (400)", func(t *testing.T) {
+		payload := config.APIKeyConfig{
+			Description:         "Mismatched Key",
+			AllowedCertificates: []string{"cert-id-2"}, // belongs to team-id-2
+			AllowedTeams:        []string{"team-id-1"}, // key is scoped only to team-id-1
+		}
+		body, _ := json.Marshal(payload)
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/config/api_keys", bytes.NewReader(body))
+		req.Header.Set("Authorization", authHeader)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusBadRequest {
+			t.Errorf("Expected 400 Bad Request, got %d", res.StatusCode)
 		}
 	})
 }

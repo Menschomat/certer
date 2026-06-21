@@ -54,9 +54,9 @@ func TestAuthentication_Roles(t *testing.T) {
 
 	apiKeys := []config.APIKeyConfig{
 		{
-			Token:          hashedFetchToken,
-			AllowedDomains: []string{"example.com"},
-			Admin:          false,
+			Token:               hashedFetchToken,
+			AllowedCertificates: []string{"cert1"},
+			Admin:               false,
 		},
 		{
 			Token:          hashedAdminToken,
@@ -148,8 +148,8 @@ func TestServer_ReloadConfig_Concurrency(t *testing.T) {
 
 	apiKeys := []config.APIKeyConfig{
 		{
-			Token:          hashedFetchToken1,
-			AllowedDomains: []string{"domain1.com"},
+			Token:               hashedFetchToken1,
+			AllowedCertificates: []string{"cert1"},
 		},
 	}
 
@@ -180,8 +180,8 @@ func TestServer_ReloadConfig_Concurrency(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		newKeys := []config.APIKeyConfig{
 			{
-				Token:          hashedFetchToken2,
-				AllowedDomains: []string{"domain2.com"},
+				Token:               hashedFetchToken2,
+				AllowedCertificates: []string{"cert2"},
 			},
 		}
 		server.ReloadConfig(nil, newKeys)

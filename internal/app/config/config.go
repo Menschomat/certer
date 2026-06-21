@@ -28,14 +28,14 @@ type CertConfig struct {
 	DNSProvider string   `json:"dns_provider,omitempty"`
 }
 
-// APIKeyConfig defines token to domain mapping.
+// APIKeyConfig defines token mapping with certificates and teams.
 type APIKeyConfig struct {
-	ID             string   `json:"id"`
-	Token          string   `json:"token"`
-	Description    string   `json:"description"`
-	AllowedDomains []string `json:"allowed_domains"`
-	AllowedTeams   []string `json:"allowed_teams"`
-	Admin          bool     `json:"admin"`
+	ID                  string   `json:"id"`
+	Token               string   `json:"token"`
+	Description         string   `json:"description"`
+	AllowedCertificates []string `json:"allowed_certificates,omitempty"`
+	AllowedTeams        []string `json:"allowed_teams"`
+	Admin               bool     `json:"admin"`
 }
 
 // State represents the runtime mutable configuration state.

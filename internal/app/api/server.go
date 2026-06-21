@@ -148,16 +148,16 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 			}
 		}
 
-		allowedDomains := matchedKey.AllowedDomains
-		if allowedDomains == nil {
-			allowedDomains = []string{}
+		allowedCertificates := matchedKey.AllowedCertificates
+		if allowedCertificates == nil {
+			allowedCertificates = []string{}
 		}
 		allowedTeams := matchedKey.AllowedTeams
 		if allowedTeams == nil {
 			allowedTeams = []string{}
 		}
 
-		ctx := context.WithValue(r.Context(), allowedDomainsKey, allowedDomains)
+		ctx := context.WithValue(r.Context(), allowedCertificatesKey, allowedCertificates)
 		ctx = context.WithValue(ctx, allowedTeamsKey, allowedTeams)
 		ctx = context.WithValue(ctx, isAdminKey, matchedKey.Admin)
 		next.ServeHTTP(w, r.WithContext(ctx))

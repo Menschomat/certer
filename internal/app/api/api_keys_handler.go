@@ -10,13 +10,13 @@ import (
 
 // APIKeyResponse represents the API key response with cleartext token.
 type APIKeyResponse struct {
-	ID             string   `json:"id"`
-	Token          string   `json:"token"`
-	CleartextToken string   `json:"cleartext_token"`
-	Description    string   `json:"description"`
-	AllowedDomains []string `json:"allowed_domains"`
-	AllowedTeams   []string `json:"allowed_teams"`
-	Admin          bool     `json:"admin"`
+	ID                  string   `json:"id"`
+	Token               string   `json:"token"`
+	CleartextToken      string   `json:"cleartext_token"`
+	Description         string   `json:"description"`
+	AllowedCertificates []string `json:"allowed_certificates,omitempty"`
+	AllowedTeams        []string `json:"allowed_teams"`
+	Admin               bool     `json:"admin"`
 }
 
 func (s *Server) handleGetConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +58,12 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	validCerts, errStr := s.areCertificatesValidForTeams(payload.AllowedCertificates, payload.AllowedTeams, payload.Admin)
+	if !validCerts {
+		respondWithError(w, http.StatusBadRequest, errStr)
+		return
+	}
+
 	uuidStr, err := GenerateUUIDv7()
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "failed to generate ID")
@@ -90,13 +96,13 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 	}
 
 	resp := APIKeyResponse{
-		ID:             payload.ID,
-		Token:          payload.Token,
-		CleartextToken: cleartextToken,
-		Description:    payload.Description,
-		AllowedDomains: payload.AllowedDomains,
-		AllowedTeams:   payload.AllowedTeams,
-		Admin:          payload.Admin,
+		ID:                  payload.ID,
+		Token:               payload.Token,
+		CleartextToken:      cleartextToken,
+		Description:         payload.Description,
+		AllowedCertificates: payload.AllowedCertificates,
+		AllowedTeams:        payload.AllowedTeams,
+		Admin:               payload.Admin,
 	}
 
 	respondWithJSON(w, http.StatusCreated, resp)
@@ -124,6 +130,12 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	validCerts, errStr := s.areCertificatesValidForTeams(payload.AllowedCertificates, payload.AllowedTeams, payload.Admin)
+	if !validCerts {
+		respondWithError(w, http.StatusBadRequest, errStr)
+		return
+	}
+
 	allowedTeams := allowedTeamsFromContext(r.Context())
 
 	getID := func(k config.APIKeyConfig) string { return k.ID }
@@ -139,7 +151,7 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 		return true, 0, ""
 	}
 	mutate := func(existing *config.APIKeyConfig) {
-		existing.AllowedDomains = payload.AllowedDomains
+		existing.AllowedCertificates = payload.AllowedCertificates
 		existing.AllowedTeams = payload.AllowedTeams
 		existing.Admin = payload.Admin
 		existing.Description = payload.Description
@@ -169,5 +181,41 @@ func (s *Server) handleDeleteConfigAPIKeys(w http.ResponseWriter, r *http.Reques
 	}
 
 	deleteConfigResource(s, w, r, id, &s.cfg.State.APIKeys, getID, "API key configuration not found", authCheck, nil)
+}
+
+func (s *Server) areCertificatesValidForTeams(allowedCerts, allowedTeams []string, isAdmin bool) (bool, string) {
+	if len(allowedCerts) == 0 {
+		return true, ""
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Build a map of existing certificates and their team IDs
+	allCerts := s.cfg.AllCertificates()
+	certMap := make(map[string]string)
+	for _, cert := range allCerts {
+		certMap[cert.ID] = cert.TeamID
+	}
+
+	// Map for fast allowedTeams lookup
+	teamMap := make(map[string]bool)
+	for _, t := range allowedTeams {
+		teamMap[t] = true
+	}
+
+	for _, id := range allowedCerts {
+		teamID, exists := certMap[id]
+		if !exists {
+			return false, "certificate with ID " + id + " does not exist"
+		}
+		// If allowedTeams is non-empty, the certificate's team must match one of the allowed teams
+		if len(allowedTeams) > 0 {
+			if !teamMap[teamID] {
+				return false, "certificate with ID " + id + " does not belong to any of the allowed teams"
+			}
+		}
+	}
+	return true, ""
 }
 

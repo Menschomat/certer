@@ -131,12 +131,13 @@
             "type": "string",
             "example": "Deploy key for backend server"
           },
-          "allowed_domains": {
+          "allowed_certificates": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             },
-            "example": ["example.com"]
+            "example": ["018f6a9e-1234-789a-bcde-f0123456789a"]
           },
           "allowed_teams": {
             "type": "array",
@@ -173,12 +174,13 @@
             "type": "string",
             "example": "Deploy key for backend server"
           },
-          "allowed_domains": {
+          "allowed_certificates": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             },
-            "example": ["example.com"]
+            "example": ["018f6a9e-1234-789a-bcde-f0123456789a"]
           },
           "allowed_teams": {
             "type": "array",

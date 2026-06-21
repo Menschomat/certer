@@ -10,12 +10,12 @@ import (
 
 type contextKey string
 
-const allowedDomainsKey contextKey = "allowed_domains"
+const allowedCertificatesKey contextKey = "allowed_certificates"
 const allowedTeamsKey contextKey = "allowed_teams"
 const isAdminKey contextKey = "is_admin"
 
-func allowedDomainsFromContext(ctx context.Context) []string {
-	if val, ok := ctx.Value(allowedDomainsKey).([]string); ok && val != nil {
+func allowedCertificatesFromContext(ctx context.Context) []string {
+	if val, ok := ctx.Value(allowedCertificatesKey).([]string); ok && val != nil {
 		return val
 	}
 	return []string{}
@@ -44,9 +44,9 @@ func isTeamAllowed(teamID string, allowedTeams []string) bool {
 	return false
 }
 
-func isDomainAllowed(domain string, allowed []string) bool {
+func isCertificateAllowed(certID string, allowed []string) bool {
 	for _, a := range allowed {
-		if a == domain {
+		if a == certID {
 			return true
 		}
 	}

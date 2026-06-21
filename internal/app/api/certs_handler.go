@@ -21,7 +21,7 @@ type CertificateResponse struct {
 }
 
 func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
-	allowedDomains := allowedDomainsFromContext(r.Context())
+	allowedCertificates := allowedCertificatesFromContext(r.Context())
 	allowedTeams := allowedTeamsFromContext(r.Context())
 
 	respList := []CertificateResponse{}
@@ -40,8 +40,8 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !isAdmin {
-			// Only return certificates for domains authorized by the token
-			if !isDomainAllowed(cc.Primary, allowedDomains) {
+			// If allowedCertificates is non-empty, only return certificates explicitly listed
+			if len(allowedCertificates) > 0 && !isCertificateAllowed(cc.ID, allowedCertificates) {
 				continue
 			}
 

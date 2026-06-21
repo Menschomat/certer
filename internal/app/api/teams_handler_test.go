@@ -27,11 +27,11 @@ func TestTeamConfigAndScoping(t *testing.T) {
 		Port: "8080",
 		APIKeys: []config.APIKeyConfig{
 			{
-				ID:             "key-id-1",
-				Token:          hashedToken,
-				AllowedDomains: []string{"bly.li"},
-				AllowedTeams:   []string{"team-id-1"},
-				Admin:          false,
+				ID:                  "key-id-1",
+				Token:               hashedToken,
+				AllowedCertificates: []string{"cert-id-1"},
+				AllowedTeams:        []string{"team-id-1"},
+				Admin:               false,
 			},
 			{
 				ID:    "admin-key-id",

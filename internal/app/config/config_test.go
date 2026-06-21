@@ -48,7 +48,7 @@ func TestLoadConfig(t *testing.T) {
 			{
 				"id": "019035a1-7b00-7521-8280-60b6adbf47ec",
 				"token": "blabliblub",
-				"allowed_domains": ["menscho.space", "weihrauchphoto.de"],
+				"allowed_certificates": ["019035a1-7b00-7521-8280-60b6adbf47eb"],
 				"allowed_teams": ["019035a1-7b00-7521-8280-60b6adbf47ed"]
 			}
 		],
@@ -103,10 +103,10 @@ func TestLoadConfig(t *testing.T) {
 
 	expectedAPIKeys := []APIKeyConfig{
 		{
-			ID:             "019035a1-7b00-7521-8280-60b6adbf47ec",
-			Token:          "blabliblub",
-			AllowedDomains: []string{"menscho.space", "weihrauchphoto.de"},
-			AllowedTeams:   []string{"019035a1-7b00-7521-8280-60b6adbf47ed"},
+			ID:                  "019035a1-7b00-7521-8280-60b6adbf47ec",
+			Token:               "blabliblub",
+			AllowedCertificates: []string{"019035a1-7b00-7521-8280-60b6adbf47eb"},
+			AllowedTeams:        []string{"019035a1-7b00-7521-8280-60b6adbf47ed"},
 		},
 	}
 	if !reflect.DeepEqual(cfg.APIKeys, expectedAPIKeys) {
@@ -362,11 +362,11 @@ func TestSaveConfig(t *testing.T) {
 		},
 		APIKeys: []APIKeyConfig{
 			{
-				ID:             "019035a1-7b00-7521-8280-60b6adbf47ec",
-				Token:          "hashed-token",
-				AllowedDomains: []string{"example.com"},
-				AllowedTeams:   []string{"019035a1-7b00-7521-8280-60b6adbf47ed"},
-				Admin:          true,
+				ID:                  "019035a1-7b00-7521-8280-60b6adbf47ec",
+				Token:               "hashed-token",
+				AllowedCertificates: []string{"019035a1-7b00-7521-8280-60b6adbf47eb"},
+				AllowedTeams:        []string{"019035a1-7b00-7521-8280-60b6adbf47ed"},
+				Admin:               true,
 			},
 		},
 		Teams: []TeamConfig{

@@ -41,10 +41,10 @@ func TestHandleGetCertificates_Authentication(t *testing.T) {
 
 	apiKeys := []config.APIKeyConfig{
 		{
-			ID:             "019035a1-7b00-7521-8280-60b6adbf47ee",
-			Token:          testAdminHash,
-			AllowedDomains: []string{"menscho.space", "weihrauchphoto.de"},
-			AllowedTeams:   []string{"system"},
+			ID:                  "019035a1-7b00-7521-8280-60b6adbf47ee",
+			Token:               testAdminHash,
+			AllowedCertificates: []string{"019035a1-7b00-7521-8280-60b6adbf47eb", "019035a1-7b00-7521-8280-60b6adbf47ec"},
+			AllowedTeams:        []string{"system"},
 		},
 	}
 
@@ -525,18 +525,18 @@ func TestDefaultDeny_UnassignedCertificates(t *testing.T) {
 	initialConfig := &config.Config{
 		APIKeys: []config.APIKeyConfig{
 			{
-				ID:             "fetch-key-empty",
-				Token:          hashedFetchTokenEmpty,
-				AllowedDomains: []string{"unassigned.com"},
-				AllowedTeams:   []string{},
-				Admin:          false,
+				ID:                  "fetch-key-empty",
+				Token:               hashedFetchTokenEmpty,
+				AllowedCertificates: []string{"cert-unassigned"},
+				AllowedTeams:        []string{},
+				Admin:               false,
 			},
 			{
-				ID:             "fetch-key-system",
-				Token:          hashedFetchTokenSystem,
-				AllowedDomains: []string{"unassigned.com"},
-				AllowedTeams:   []string{"system"},
-				Admin:          false,
+				ID:                  "fetch-key-system",
+				Token:               hashedFetchTokenSystem,
+				AllowedCertificates: []string{"cert-unassigned"},
+				AllowedTeams:        []string{"system"},
+				Admin:               false,
 			},
 		},
 	}
