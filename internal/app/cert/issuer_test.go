@@ -1,14 +1,18 @@
 package cert
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/go-acme/lego/v5/lego"
+	legolog "github.com/go-acme/lego/v5/log"
 )
 
 func TestNewIssuer(t *testing.T) {
@@ -152,4 +156,33 @@ func TestSetupChallengeProvider(t *testing.T) {
 		t.Errorf("Expected cloudflare initialization to succeed with env, got error: %v", err)
 	}
 }
+
+func TestLegoLoggingBridge(t *testing.T) {
+	// Capture slog JSON output
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	
+	// Temporarily set default logger and restore at end of test
+	oldLogger := slog.Default()
+	slog.SetDefault(logger)
+	legolog.SetDefault(logger)
+	defer func() {
+		slog.SetDefault(oldLogger)
+		legolog.SetDefault(oldLogger)
+	}()
+
+	// Send a print statement to Lego's global logger
+	legolog.Info("Hello from Lego logger!")
+
+	logOutput := buf.String()
+
+	// Verify that the output is in JSON format and contains the message and level
+	if !strings.Contains(logOutput, `"msg":"Hello from Lego logger!"`) {
+		t.Errorf("Expected JSON log to contain message, got: %q", logOutput)
+	}
+	if !strings.Contains(logOutput, `"level":"INFO"`) {
+		t.Errorf("Expected JSON log to have level INFO, got: %q", logOutput)
+	}
+}
+
 

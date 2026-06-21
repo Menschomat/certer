@@ -13,12 +13,14 @@ import (
 	"certer/internal/app/api"
 	"certer/internal/app/cert"
 	"certer/internal/app/config"
+	legolog "github.com/go-acme/lego/v5/log"
 )
 
 func main() {
 	// Initialize structured logger
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+	legolog.SetDefault(logger)
 
 	// Load config
 	cfg := config.Load()

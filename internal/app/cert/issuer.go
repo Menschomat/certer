@@ -3,6 +3,7 @@ package cert
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-acme/lego/v5/challenge/dns01"
 	"github.com/go-acme/lego/v5/challenge/http01"
 	"github.com/go-acme/lego/v5/lego"
+	legolog "github.com/go-acme/lego/v5/log"
 	"github.com/go-acme/lego/v5/providers/dns"
 	"github.com/go-acme/lego/v5/registration"
 )
@@ -230,3 +232,8 @@ func (s *syncProvider) Timeout() (timeout, interval time.Duration) {
 	}
 	return 60 * time.Second, 2 * time.Second
 }
+
+func init() {
+	legolog.SetDefault(slog.Default())
+}
+
