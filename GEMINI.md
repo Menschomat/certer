@@ -8,14 +8,17 @@ This file provides system context, architectural constraints, and development gu
 
 - `cmd/server/main.go`: Daemon bootstrap. Configures structured logger, parses config, registers background scheduler, and starts API server.
 - `cmd/keygen/main.go`: Independent command line tool used to generate secure API tokens and their Argon2id hashes.
+- `cmd/audit/main.go`: Statically compiled CLI utility used to generate comprehensive reports of the current teams, certificates, and API keys.
 - `internal/app/config/config.go`: Configuration models and loader. Supports defaults, JSON configs (`config.json`), environment overrides, and auto-generates missing UUIDs on startup.
 - `internal/app/cert/`: Core certificate automation logic.
   - `user.go`: Implements Lego's `registration.User` interface.
   - `issuer.go`: ACME communication wrapper. Implements `CertificateIssuer` interface. Handles DNS-01/HTTP-01 solvers.
   - `scheduler.go`: Expiration checking, private key existence verification, and configuration monitoring loops.
-- `internal/app/api/`: REST routing and token hashing.
-  - `handler.go`: HTTP handler logic. Imposes table-driven routing, generic CRUD decoders/filters, context helpers, and authentication/scoping middleware.
+- `internal/app/api/`: REST routing, handlers, and token hashing.
+  - `handler.go`: Core HTTP server initialization, middleware, and table-driven routing.
+  - `api_keys_handler.go`, `certs_handler.go`, `teams_handler.go`: Resource-specific CRUD handlers.
   - `auth.go`: Argon2id verification and hash generation helpers.
+  - `helpers.go`: Shared context accessors and JSON helpers.
 - `openapi.json`: OpenAPI v3 specification file mapping all client and control plane APIs.
 
 ---
@@ -37,7 +40,7 @@ graph TD
     end
     subgraph Web Server
         API[api.Server] -->|GET /api/v1/certificates| Auth{Argon2id Auth}
-        Auth -->|Pass| Filter[Filter Allowed Domains & Teams]
+        Auth -->|Pass| Filter[Filter Allowed Certificates & Teams]
         Filter -->|Reads| Certs
         Filter -->|JSON Response| Client[REST Client]
     end
@@ -73,7 +76,7 @@ graph TD
 4. **Identities & Referential Integrity**:
    - **UUIDv7**: Configuration entries (Certificates, API Keys, and Teams) are identified exclusively by server-generated UUID v7 strings.
    - **Referential Integrity**: Before deleting a Team configuration, handlers must verify it is not in use by any configured certificates (`team_id`) or API keys (`allowed_teams`). Return `400 Bad Request` if a reference exists.
-   - **Type-safe Context Access**: Never use unchecked type assertions like `r.Context().Value(Key).([]string)` directly inside route handlers. Always wrap context claims retrieval in helper functions (`allowedDomainsFromContext`, `allowedTeamsFromContext`).
+   - **Type-safe Context Access**: Never use unchecked type assertions like `r.Context().Value(Key).([]string)` directly inside route handlers. Always wrap context claims retrieval in helper functions (`allowedCertificatesFromContext`, `allowedTeamsFromContext`).
 
 5. **Structured Logging**:
    - Use structured logs (`log/slog`) with key-value descriptors.
