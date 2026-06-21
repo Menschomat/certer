@@ -92,6 +92,42 @@ flowchart TB
 
 ---
 
+## Terraform Provider
+
+To manage configurations (certificates, teams, and API keys) declaratively, you can use the official [Certer Terraform Provider](https://github.com/Menschomat/terraform-provider-certer).
+
+It is published on the Terraform Registry at [Menschomat/certer](https://registry.terraform.io/providers/Menschomat/certer/latest/docs).
+
+Example usage:
+```hcl
+terraform {
+  required_providers {
+    certer = {
+      source  = "Menschomat/certer"
+      version = "~> 1.0"
+    }
+  }
+}
+
+provider "certer" {
+  address = "http://localhost:8080"
+  token   = "your_admin_api_token"
+}
+
+resource "certer_team" "dev" {
+  name        = "dev-team"
+  description = "Development team"
+}
+
+resource "certer_certificate" "wildcard" {
+  primary = "example.com"
+  team_id = certer_team.dev.id
+  sans    = ["*.example.com"]
+}
+```
+
+---
+
 ## Getting Started
 
 ### Prerequisites
