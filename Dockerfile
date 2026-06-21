@@ -15,7 +15,8 @@ ARG TARGETOS
 ARG TARGETARCH
 
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-w -s" -o bin/server ./cmd/server && \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-w -s" -o bin/keygen ./cmd/keygen
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-w -s" -o bin/keygen ./cmd/keygen && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-w -s" -o bin/audit ./cmd/audit
 
 # Stage 2: Scratch minimal execution image
 FROM scratch
@@ -26,6 +27,7 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifi
 # Copy statically compiled binaries
 COPY --from=builder /app/bin/server /server
 COPY --from=builder /app/bin/keygen /keygen
+COPY --from=builder /app/bin/audit /audit
 
 EXPOSE 8080
 EXPOSE 5002
