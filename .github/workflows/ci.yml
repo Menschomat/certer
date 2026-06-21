@@ -11,6 +11,9 @@ jobs:
     name: Build and Test
     runs-on: ubuntu-latest
     if: github.server_url == 'https://github.com'
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v6
