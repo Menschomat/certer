@@ -30,6 +30,7 @@ jobs:
         run: make build
 
       - name: Import Secrets from Vault
+        if: github.server_url != 'https://github.com'
         id: import-secrets
         uses: hashicorp/vault-action@v4
         with:
@@ -43,9 +44,11 @@ jobs:
             cert-central/secret/data/registry password | REGISTRY_PASSWORD
 
       - name: Set up Docker Buildx
+        if: github.server_url != 'https://github.com'
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to Container Registry
+        if: github.server_url != 'https://github.com'
         uses: docker/login-action@v4
         with:
           registry: registry.dmz.k8s.menscho.space
@@ -53,6 +56,7 @@ jobs:
           password: ${{ steps.import-secrets.outputs.REGISTRY_PASSWORD }}
 
       - name: Build and Push Docker Image (Multi-Platform)
+        if: github.server_url != 'https://github.com'
         uses: docker/build-push-action@v7
         with:
           context: .
