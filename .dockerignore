@@ -1,0 +1,16 @@
+.git/
+.github/
+.gitea/
+bin/
+certs/
+.env
+.env.example
+config.json
+example.config.json
+certer-k8s.yaml
+README.md
+GEMINI.md
+Makefile
+docker-compose.yml
+openapi.json
+*.sh
