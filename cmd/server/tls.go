@@ -8,6 +8,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"math/big"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -50,4 +52,25 @@ func generateSelfSignedCert() (tls.Certificate, error) {
 		Certificate: [][]byte{derBytes},
 		PrivateKey:  priv,
 	}, nil
+}
+
+// makeTLSConfig returns a tls.Config with GetCertificate callback configured for dynamic hot-reloading.
+func makeTLSConfig(certStorageDir, sslCertID string, fallbackCert tls.Certificate) *tls.Config {
+	return &tls.Config{
+		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			if sslCertID != "" {
+				certPath := filepath.Join(certStorageDir, sslCertID+".crt")
+				keyPath := filepath.Join(certStorageDir, sslCertID+".key")
+
+				if _, errCert := os.Stat(certPath); errCert == nil {
+					if _, errKey := os.Stat(keyPath); errKey == nil {
+						if cert, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
+							return &cert, nil
+						}
+					}
+				}
+			}
+			return &fallbackCert, nil
+		},
+	}
 }

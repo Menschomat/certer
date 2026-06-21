@@ -2,13 +2,11 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -62,38 +60,15 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	var tlsCert tls.Certificate
-	var loadedReal bool
-
-	if cfg.SSLCertID != "" {
-		certPath := filepath.Join(cfg.CertStorageDir, cfg.SSLCertID+".crt")
-		keyPath := filepath.Join(cfg.CertStorageDir, cfg.SSLCertID+".key")
-
-		if _, errCert := os.Stat(certPath); errCert == nil {
-			if _, errKey := os.Stat(keyPath); errKey == nil {
-				if cert, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
-					tlsCert = cert
-					loadedReal = true
-				} else {
-					logger.Error("Failed to load configured SSL certificate key pair", "error", err)
-				}
-			}
-		}
+	// Generate fallback self-signed certificate
+	logger.Info("Generating temporary self-signed certificate for HTTPS")
+	fallbackCert, err := generateSelfSignedCert()
+	if err != nil {
+		logger.Error("Failed to generate temporary self-signed certificate", "error", err)
+		os.Exit(1)
 	}
 
-	if !loadedReal {
-		logger.Info("Generating temporary self-signed certificate for HTTPS")
-		cert, err := generateSelfSignedCert()
-		if err != nil {
-			logger.Error("Failed to generate self-signed certificate", "error", err)
-			os.Exit(1)
-		}
-		tlsCert = cert
-	}
-
-	srvHTTPS.TLSConfig = &tls.Config{
-		Certificates: []tls.Certificate{tlsCert},
-	}
+	srvHTTPS.TLSConfig = makeTLSConfig(cfg.CertStorageDir, cfg.SSLCertID, fallbackCert)
 
 	// Listen for syscall signals for process shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -140,8 +115,8 @@ func main() {
 	}()
 
 	// Start HTTPS server in the foreground
-	logger.Info("HTTPS Server is running", "addr", srvHTTPS.Addr, "using_real_cert", loadedReal)
-	err := srvHTTPS.ListenAndServeTLS("", "")
+	logger.Info("HTTPS Server is running", "addr", srvHTTPS.Addr)
+	err = srvHTTPS.ListenAndServeTLS("", "")
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("HTTPS Server listening failed", "error", err)
 		os.Exit(1)
