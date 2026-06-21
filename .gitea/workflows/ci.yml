@@ -40,8 +40,8 @@ jobs:
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
           secrets: |
-            certer/secret/data/registry username | REGISTRY_USERNAME ;
-            certer/secret/data/registry password | REGISTRY_PASSWORD
+            certer/secret/data/cicd/registry username | REGISTRY_USERNAME ;
+            certer/secret/data/cicd/registry password | REGISTRY_PASSWORD
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
