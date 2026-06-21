@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"cert-central/internal/app/config"
+	"certer/internal/app/config"
 )
 
 // Scheduler coordinates periodic checks and renewals for SSL certificates.

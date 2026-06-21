@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"cert-central/internal/app/config"
+	"certer/internal/app/config"
 )
 
 // CertificateResponse represents the JSON schema for sharing certificates.

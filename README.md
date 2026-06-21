@@ -1,4 +1,4 @@
-# Cert Central
+# Certer
 
 Production-grade, automated SSL/TLS certificate management service in Go. Integrates with Let's Encrypt (ACME v2) using DNS-01 challenges, schedules renewals, and exposes certificates via a domain-restricted, authenticated REST API.
 
@@ -203,10 +203,10 @@ Hash custom tokens or generate secure random credentials using the built-in CLI 
 Since the keygen utility is compiled and copied into the Docker image, you can invoke it by overriding the container entrypoint:
 ```bash
 # Generate random secure token and its Argon2id hash
-docker run --rm -it --entrypoint /keygen cert-central
+docker run --rm -it --entrypoint /keygen certer
 
 # Generate Argon2id hash for a custom token
-docker run --rm -it --entrypoint /keygen cert-central -token mysecret
+docker run --rm -it --entrypoint /keygen certer -token mysecret
 ```
 
 
@@ -242,7 +242,7 @@ Retrieve a greetings message.
 - **Auth**: None
 - **Response**:
   ```json
-  {"message": "Hello from cert-central!"}
+  {"message": "Hello from Certer!"}
   ```
 
 ---
@@ -466,7 +466,7 @@ You can configure and spin up the complete service using Docker Compose:
 ### Running with Docker CLI (Manual)
 Build minimal Docker image from scratch:
 ```bash
-docker build -t cert-central .
+docker build -t certer .
 ```
 
 Run container:
@@ -476,5 +476,5 @@ docker run -d \
   -v $(pwd)/config.json:/config.json \
   -v $(pwd)/certs:/certs \
   -e CF_DNS_API_TOKEN="your_token" \
-  cert-central
+  certer
 ```

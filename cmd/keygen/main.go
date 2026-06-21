@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"cert-central/internal/app/api"
+	"certer/internal/app/api"
 )
 
 func main() {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"cert-central/internal/app/config"
+	"certer/internal/app/config"
 )
 
 // ConfigReloader defines the interface to reload scheduler configuration.

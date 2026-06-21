@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "CertCentral API",
+    "title": "Certer API",
     "description": "API for managing ACME certificate issuance, API tokens, and team configurations.",
     "version": "1.0.0"
   },

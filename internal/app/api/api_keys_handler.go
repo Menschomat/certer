@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"net/http"
 
-	"cert-central/internal/app/config"
+	"certer/internal/app/config"
 )
 
 // APIKeyResponse represents the API key response with cleartext token.

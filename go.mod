@@ -1,4 +1,4 @@
-module cert-central
+module certer
 
 go 1.26.4
 

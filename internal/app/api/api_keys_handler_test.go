@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"cert-central/internal/app/config"
+	"certer/internal/app/config"
 )
 
 func TestControlPlaneAPI_APIKeys(t *testing.T) {

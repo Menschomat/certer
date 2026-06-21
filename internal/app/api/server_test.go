@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"cert-central/internal/app/config"
+	"certer/internal/app/config"
 )
 
 func TestHandleHealth(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"cert-central/internal/app/config"
+	"certer/internal/app/config"
 )
 
 func TestHandleGetCertificates_Authentication(t *testing.T) {

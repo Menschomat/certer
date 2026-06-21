@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"cert-central/internal/app/config"
+	"certer/internal/app/config"
 )
 
 type contextKey string

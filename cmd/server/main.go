@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"cert-central/internal/app/api"
-	"cert-central/internal/app/cert"
-	"cert-central/internal/app/config"
+	"certer/internal/app/api"
+	"certer/internal/app/cert"
+	"certer/internal/app/config"
 )
 
 func main() {

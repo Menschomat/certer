@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"cert-central/internal/app/config"
+	"certer/internal/app/config"
 )
 
 func TestTeamConfigAndScoping(t *testing.T) {

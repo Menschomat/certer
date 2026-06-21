@@ -1,6 +1,6 @@
 # GEMINI: AI Agent Developer Context & Guidelines
 
-This file provides system context, architectural constraints, and development guidelines for AI coding assistants working on the `cert-central` codebase.
+This file provides system context, architectural constraints, and development guidelines for AI coding assistants working on the `certer` codebase.
 
 ---
 

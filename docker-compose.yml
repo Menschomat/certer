@@ -1,9 +1,9 @@
 services:
-  cert-central:
+  certer:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: cert-central
+    container_name: certer
     restart: unless-stopped
     ports:
       - "${PORT:-8080}:${PORT:-8080}" # REST API

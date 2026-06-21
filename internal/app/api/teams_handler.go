@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"cert-central/internal/app/config"
+	"certer/internal/app/config"
 )
 
 func (s *Server) handleGetConfigTeams(w http.ResponseWriter, r *http.Request) {

@@ -37,11 +37,11 @@ test:
 
 # Build Docker image
 docker:
-	docker build -t cert-central .
+	docker build -t certer .
 
 # Build multi-platform Docker image using buildx (AMD64 & ARM64)
 docker-multi:
-	docker buildx build --platform linux/amd64,linux/arm64 -t cert-central:latest .
+	docker buildx build --platform linux/amd64,linux/arm64 -t certer:latest .
 
 # Clean build artifacts
 clean:

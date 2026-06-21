@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"cert-central/internal/app/config"
+	"certer/internal/app/config"
 )
 
 type MockIssuer struct {
