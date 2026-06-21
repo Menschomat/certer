@@ -135,8 +135,11 @@ func TestSetupChallengeProvider(t *testing.T) {
 
 	// 3. Valid Provider (Missing Credentials) -> should fail
 	os.Unsetenv("CF_DNS_API_TOKEN")
+	os.Unsetenv("CLOUDFLARE_DNS_API_TOKEN")
 	os.Unsetenv("CF_API_KEY")
+	os.Unsetenv("CLOUDFLARE_API_KEY")
 	os.Unsetenv("CF_API_EMAIL")
+	os.Unsetenv("CLOUDFLARE_EMAIL")
 	err = issuer.setupChallengeProvider(client, "cloudflare")
 	if err == nil {
 		t.Error("Expected error for cloudflare due to missing credentials, got nil")
