@@ -2,6 +2,8 @@
 
 Production-grade, automated SSL/TLS certificate management service in Go. Integrates with Let's Encrypt (ACME v2) using DNS-01 challenges, schedules renewals, and exposes certificates via a domain-restricted, authenticated REST API.
 
+📖 **Documentation:** [menschomat.github.io/certer-docs](https://menschomat.github.io/certer-docs/docs/)
+
 ---
 
 ## Architecture
