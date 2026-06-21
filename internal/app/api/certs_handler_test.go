@@ -233,6 +233,7 @@ func TestControlPlaneAPI_Certificates(t *testing.T) {
 			Sans:        []string{"*.newdomain.com"},
 			TeamID:      "team-id-1",
 			Description: "New Certificate",
+			DNSProvider: "hetzner",
 		}
 		body, _ := json.Marshal(newCert)
 		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/config/certificates", bytes.NewReader(body))
@@ -256,6 +257,9 @@ func TestControlPlaneAPI_Certificates(t *testing.T) {
 		if newCertID == "" {
 			t.Errorf("Expected generated UUID in response")
 		}
+		if created.DNSProvider != "hetzner" {
+			t.Errorf("Expected DNSProvider 'hetzner', got %q", created.DNSProvider)
+		}
 
 		// Verify reloader was called
 		if reloader.CalledCount != 1 {
@@ -265,8 +269,8 @@ func TestControlPlaneAPI_Certificates(t *testing.T) {
 		// Verify saved config file has the new certificate
 		loadedCfg := config.Load()
 		allCerts := loadedCfg.AllCertificates()
-		if len(allCerts) != 2 || allCerts[1].Primary != "newdomain.com" || allCerts[1].ID != newCertID {
-			t.Errorf("Expected new certificate to be saved on disk, got: %+v", allCerts)
+		if len(allCerts) != 2 || allCerts[1].Primary != "newdomain.com" || allCerts[1].ID != newCertID || allCerts[1].DNSProvider != "hetzner" {
+			t.Errorf("Expected new certificate to be saved on disk with DNS provider, got: %+v", allCerts)
 		}
 	})
 
@@ -297,6 +301,7 @@ func TestControlPlaneAPI_Certificates(t *testing.T) {
 			Sans:        []string{"admin.example.com", "mail.example.com"},
 			TeamID:      "team-id-1",
 			Description: "Updated Description",
+			DNSProvider: "cloudflare",
 		}
 		body, _ := json.Marshal(updatedCert)
 		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config/certificates/"+newCertID, bytes.NewReader(body))
@@ -315,8 +320,8 @@ func TestControlPlaneAPI_Certificates(t *testing.T) {
 		loadedCfg := config.Load()
 		for _, c := range loadedCfg.AllCertificates() {
 			if c.ID == newCertID {
-				if len(c.Sans) != 2 || c.Sans[0] != "admin.example.com" || c.Description != "Updated Description" {
-					t.Errorf("Expected updated SANs and description, got %+v", c)
+				if len(c.Sans) != 2 || c.Sans[0] != "admin.example.com" || c.Description != "Updated Description" || c.DNSProvider != "cloudflare" {
+					t.Errorf("Expected updated SANs, description, and DNSProvider, got %+v", c)
 				}
 			}
 		}

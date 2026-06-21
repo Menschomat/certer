@@ -86,7 +86,7 @@ func (s *Scheduler) CheckAndRenew(ctx context.Context) error {
 
 		if reason != "" {
 			slog.Info("Certificate renewal triggered", "id", cc.ID, "primary_domain", cc.Primary, "reason", reason, "domains", domains)
-			result, err := s.issuer.Issue(ctx, s.email, domains, cc.ID)
+			result, err := s.issuer.Issue(ctx, s.email, domains, cc.ID, cc.DNSProvider)
 			if err != nil {
 				slog.Error("Failed to issue certificate", "id", cc.ID, "primary_domain", cc.Primary, "error", err)
 				continue

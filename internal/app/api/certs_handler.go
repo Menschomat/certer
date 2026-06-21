@@ -196,6 +196,7 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 		existing.Sans = payload.Sans
 		existing.TeamID = payload.TeamID
 		existing.Description = payload.Description
+		existing.DNSProvider = payload.DNSProvider
 	}
 
 	updateConfigResource(s, w, r, id, &s.cfg.State.Certificates, getID, "certificate configuration not found", authCheck, mutate)

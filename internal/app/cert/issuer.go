@@ -22,7 +22,7 @@ import (
 
 // CertificateIssuer is the interface for ACME certificate operations.
 type CertificateIssuer interface {
-	Issue(ctx context.Context, email string, domains []string, filename string) (*IssueResult, error)
+	Issue(ctx context.Context, email string, domains []string, filename string, dnsProvider string) (*IssueResult, error)
 }
 
 // Issuer manages cert issuance using Lego client.
@@ -62,7 +62,7 @@ type IssueResult struct {
 }
 
 // Issue requests a certificate for a list of domains from the ACME CA server.
-func (i *Issuer) Issue(ctx context.Context, email string, domains []string, filename string) (*IssueResult, error) {
+func (i *Issuer) Issue(ctx context.Context, email string, domains []string, filename string, dnsProvider string) (*IssueResult, error) {
 	if len(domains) == 0 {
 		return nil, fmt.Errorf("no domains provided for certificate issuance")
 	}
@@ -89,7 +89,11 @@ func (i *Issuer) Issue(ctx context.Context, email string, domains []string, file
 	}
 
 	// Setup DNS-01 or HTTP-01 challenge provider
-	if err := i.setupChallengeProvider(client); err != nil {
+	providerToUse := dnsProvider
+	if providerToUse == "" {
+		providerToUse = i.dnsProvider
+	}
+	if err := i.setupChallengeProvider(client, providerToUse); err != nil {
 		return nil, err
 	}
 
@@ -127,8 +131,8 @@ func (i *Issuer) Issue(ctx context.Context, email string, domains []string, file
 	}, nil
 }
 
-func (i *Issuer) setupChallengeProvider(client *lego.Client) error {
-	switch i.dnsProvider {
+func (i *Issuer) setupChallengeProvider(client *lego.Client, dnsProvider string) error {
+	switch dnsProvider {
 	case "cloudflare":
 		provider, err := cloudflare.NewDNSProvider()
 		if err != nil {

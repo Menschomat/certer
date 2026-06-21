@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -23,16 +24,18 @@ type MockIssuer struct {
 	CalledCount        int
 	CalledEmail        string
 	CalledDomains      [][]string
+	CalledDNSProviders []string
 	Result             *IssueResult
 	Err                error
 	HasCanceledContext bool
 }
 
-func (m *MockIssuer) Issue(ctx context.Context, email string, domains []string, filename string) (*IssueResult, error) {
+func (m *MockIssuer) Issue(ctx context.Context, email string, domains []string, filename string, dnsProvider string) (*IssueResult, error) {
 	m.mu.Lock()
 	m.CalledCount++
 	m.CalledEmail = email
 	m.CalledDomains = append(m.CalledDomains, domains)
+	m.CalledDNSProviders = append(m.CalledDNSProviders, dnsProvider)
 	if ctx.Err() != nil {
 		m.HasCanceledContext = true
 	}
@@ -291,6 +294,53 @@ func TestScheduler_ReloadConfig(t *testing.T) {
 	mock.mu.RUnlock()
 	if hasCanceled {
 		t.Errorf("Expected ReloadConfig to run with a non-canceled context, but the context was canceled")
+	}
+}
+
+func TestScheduler_DNSProviderOverride(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "scheduler-dns-override-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mock := &MockIssuer{}
+	email := "admin@example.com"
+	certs := []config.CertConfig{
+		{
+			ID:          "id-hetzner",
+			Primary:     "hetznerdomain.com",
+			Sans:        []string{"*.hetznerdomain.com"},
+			DNSProvider: "hetzner",
+		},
+		{
+			ID:          "id-default",
+			Primary:     "defaultdomain.com",
+			Sans:        []string{"*.defaultdomain.com"},
+			DNSProvider: "", // Should use default (empty)
+		},
+	}
+
+	s := NewScheduler(mock, email, certs, tmpDir, 30, 24)
+
+	err = s.CheckAndRenew(context.Background())
+	if err != nil {
+		t.Fatalf("CheckAndRenew failed: %v", err)
+	}
+
+	mock.mu.RLock()
+	calledCount := mock.CalledCount
+	calledProviders := make([]string, len(mock.CalledDNSProviders))
+	copy(calledProviders, mock.CalledDNSProviders)
+	mock.mu.RUnlock()
+
+	if calledCount != 2 {
+		t.Errorf("Expected Issue to be called 2 times, got %d", calledCount)
+	}
+
+	expectedProviders := []string{"hetzner", ""}
+	if !reflect.DeepEqual(calledProviders, expectedProviders) {
+		t.Errorf("Expected called DNS providers %v, got %v", expectedProviders, calledProviders)
 	}
 }
 

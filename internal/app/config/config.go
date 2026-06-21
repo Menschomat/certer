@@ -25,6 +25,7 @@ type CertConfig struct {
 	Sans        []string `json:"sans"`
 	TeamID      string   `json:"team_id"`
 	Description string   `json:"description"`
+	DNSProvider string   `json:"dns_provider,omitempty"`
 }
 
 // APIKeyConfig defines token to domain mapping.

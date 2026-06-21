@@ -104,6 +104,11 @@
           "description": {
             "type": "string",
             "example": "Production Web Cert"
+          },
+          "dns_provider": {
+            "type": "string",
+            "description": "Optional custom DNS provider (e.g. cloudflare, hetzner). If omitted, falls back to the global default.",
+            "example": "hetzner"
           }
         }
       },

@@ -610,5 +610,40 @@ func TestLoadConfig_SSL(t *testing.T) {
 	})
 }
 
+func TestLoadConfig_CertificateDNSProvider(t *testing.T) {
+	configJSON := `{
+		"certificates": [
+			{
+				"id": "cert-1",
+				"primary": "example.com",
+				"dns_provider": "hetzner"
+			},
+			{
+				"id": "cert-2",
+				"primary": "other.com"
+			}
+		]
+	}`
+
+	configPath := createTempConfig(t, configJSON)
+	os.Setenv("CONFIG_PATH", configPath)
+	defer os.Unsetenv("CONFIG_PATH")
+
+	cfg := Load()
+
+	if len(cfg.Certificates) != 2 {
+		t.Fatalf("expected 2 certificates, got %d", len(cfg.Certificates))
+	}
+
+	if cfg.Certificates[0].DNSProvider != "hetzner" {
+		t.Errorf("expected dns_provider 'hetzner' for cert-1, got %q", cfg.Certificates[0].DNSProvider)
+	}
+
+	if cfg.Certificates[1].DNSProvider != "" {
+		t.Errorf("expected empty dns_provider for cert-2, got %q", cfg.Certificates[1].DNSProvider)
+	}
+}
+
+
 
 
