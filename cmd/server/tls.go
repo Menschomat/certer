@@ -58,19 +58,26 @@ func generateSelfSignedCert() (tls.Certificate, error) {
 func makeTLSConfig(certStorageDir, sslCertID string, fallbackCert tls.Certificate) *tls.Config {
 	return &tls.Config{
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			if sslCertID != "" {
-				certPath := filepath.Join(certStorageDir, sslCertID+".crt")
-				keyPath := filepath.Join(certStorageDir, sslCertID+".key")
-
-				if _, errCert := os.Stat(certPath); errCert == nil {
-					if _, errKey := os.Stat(keyPath); errKey == nil {
-						if cert, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
-							return &cert, nil
-						}
-					}
-				}
+			if sslCertID == "" {
+				return &fallbackCert, nil
 			}
-			return &fallbackCert, nil
+
+			certPath := filepath.Join(certStorageDir, sslCertID+".crt")
+			keyPath := filepath.Join(certStorageDir, sslCertID+".key")
+
+			if _, err := os.Stat(certPath); err != nil {
+				return &fallbackCert, nil
+			}
+			if _, err := os.Stat(keyPath); err != nil {
+				return &fallbackCert, nil
+			}
+
+			cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+			if err != nil {
+				return &fallbackCert, nil
+			}
+
+			return &cert, nil
 		},
 	}
 }
