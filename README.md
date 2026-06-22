@@ -359,6 +359,24 @@ Retrieve PEM-encoded certificates and private keys.
   ]
   ```
 
+#### 3.1 Fetch Raw PEM Certificate or Key
+Directly download the raw PEM encoded block as plain text (no JSON).
+- **Endpoints**:
+  - `GET /api/v1/certificates/{identifier}/certificate`
+  - `GET /api/v1/certificates/{identifier}/private-key`
+- **Auth**: Bearer Token (Fetch Token, `admin = false` or Admin Token)
+- **Path Parameter**: `{identifier}` can be the Certificate UUID or a domain name (matches primary or SAN wildcard).
+- **Example request with curl**:
+  ```bash
+  curl -s -H "Authorization: Bearer mytoken" http://localhost:8080/api/v1/certificates/example.com/certificate > example.com.crt
+  ```
+- **Response**:
+  ```text
+  -----BEGIN CERTIFICATE-----
+  ...
+  -----END CERTIFICATE-----
+  ```
+
 ---
 
 ### 4. Configuration: Certificates (Admin APIs)

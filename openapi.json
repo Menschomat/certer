@@ -314,6 +314,136 @@
         }
       }
     },
+    "/certificates/{identifier}/certificate": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Raw Certificate",
+        "description": "Retrieve raw public certificate PEM block for specified certificate identifier (UUID or domain name).",
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "description": "Certificate ID (UUID) or domain name (primary or SAN)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw PEM encoded public certificate",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized access due to missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden access due to scoped token restrictions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Certificate not found or not yet issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/certificates/{identifier}/private-key": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Raw Private Key",
+        "description": "Retrieve raw private key PEM block for specified certificate identifier (UUID or domain name).",
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "description": "Certificate ID (UUID) or domain name (primary or SAN)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw PEM encoded private key",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized access due to missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden access due to scoped token restrictions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Certificate not found or not yet issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/certificates": {
       "get": {
         "security": [

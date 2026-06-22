@@ -47,6 +47,8 @@ func (s *Server) Routes() http.Handler {
 
 		// Scoped Certificates API
 		{"GET /api/v1/certificates", s.Authenticate(http.HandlerFunc(s.handleGetCertificates))},
+		{"GET /api/v1/certificates/{identifier}/certificate", s.Authenticate(http.HandlerFunc(s.handleGetCertificateRaw))},
+		{"GET /api/v1/certificates/{identifier}/private-key", s.Authenticate(http.HandlerFunc(s.handleGetPrivateKeyRaw))},
 
 		// Control plane APIs (Certificates)
 		{"GET /api/v1/config/certificates", s.Authenticate(http.HandlerFunc(s.handleGetConfigCertificates))},

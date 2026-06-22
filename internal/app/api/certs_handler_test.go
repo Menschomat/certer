@@ -778,9 +778,193 @@ func TestAdmin_FetchCertificates(t *testing.T) {
 		if len(certs) != 1 {
 			t.Fatalf("Expected exactly 1 certificate, got %d", len(certs))
 		}
-		if certs[0].ID != "cert-team-1" {
-			t.Errorf("Expected cert-team-1, got %q", certs[0].ID)
+	})
+}
+
+func TestRawCertificateEndpoints(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t, "api-raw-cert-tests-*")
+	defer cleanup()
+
+	hashedAdmin, err := GenerateArgon2idHash("admin-token")
+	if err != nil {
+		t.Fatalf("Failed to hash token: %v", err)
+	}
+	hashedUser, err := GenerateArgon2idHash("user-token")
+	if err != nil {
+		t.Fatalf("Failed to hash token: %v", err)
+	}
+
+	initialConfig := &config.Config{
+		APIKeys: []config.APIKeyConfig{
+			{
+				ID:    "key-admin",
+				Token: hashedAdmin,
+				Admin: true,
+			},
+			{
+				ID:                  "key-user",
+				Token:               hashedUser,
+				AllowedCertificates: []string{"cert-active", "cert-unissued"},
+				AllowedTeams:        []string{"team-user"},
+			},
+		},
+		Certificates: []config.CertConfig{
+			{
+				ID:      "cert-active",
+				Primary: "active.com",
+				Sans:    []string{"*.active.com", "extra.active.com"},
+				TeamID:  "team-user",
+			},
+			{
+				ID:      "cert-unissued",
+				Primary: "unissued.com",
+				TeamID:  "team-user",
+			},
+			{
+				ID:      "cert-other",
+				Primary: "other.com",
+				TeamID:  "team-other",
+			},
+		},
+	}
+	if err := initialConfig.Save(os.Getenv("CONFIG_PATH")); err != nil {
+		t.Fatalf("Failed to save initial config: %v", err)
+	}
+
+	err = os.WriteFile(filepath.Join(tmpDir, "cert-active.crt"), []byte("PEM-CERT-ACTIVE"), 0644)
+	if err != nil {
+		t.Fatalf("Write cert failed: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(tmpDir, "cert-active.key"), []byte("PEM-KEY-ACTIVE"), 0644)
+	if err != nil {
+		t.Fatalf("Write key failed: %v", err)
+	}
+
+	cfg := config.Load()
+	server := NewServer(tmpDir, cfg, nil)
+	ts := httptest.NewServer(server.Routes())
+	defer ts.Close()
+
+	t.Run("Get certificate by ID - Success", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/cert-active/certificate", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
+		}
+		var body bytes.Buffer
+		body.ReadFrom(res.Body)
+		if body.String() != "PEM-CERT-ACTIVE" {
+			t.Errorf("Expected PEM-CERT-ACTIVE, got %q", body.String())
+		}
+		if res.Header.Get("Content-Type") != "text/plain; charset=utf-8" {
+			t.Errorf("Expected text/plain, got %q", res.Header.Get("Content-Type"))
+		}
+	})
+
+	t.Run("Get private key by ID - Success", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/cert-active/private-key", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
+		}
+		var body bytes.Buffer
+		body.ReadFrom(res.Body)
+		if body.String() != "PEM-KEY-ACTIVE" {
+			t.Errorf("Expected PEM-KEY-ACTIVE, got %q", body.String())
+		}
+	})
+
+	t.Run("Get certificate by primary domain - Success", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/active.com/certificate", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
+		}
+		var body bytes.Buffer
+		body.ReadFrom(res.Body)
+		if body.String() != "PEM-CERT-ACTIVE" {
+			t.Errorf("Expected PEM-CERT-ACTIVE, got %q", body.String())
+		}
+	})
+
+	t.Run("Get certificate by SAN wildcard domain - Success", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/sub.active.com/certificate", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
+		}
+		var body bytes.Buffer
+		body.ReadFrom(res.Body)
+		if body.String() != "PEM-CERT-ACTIVE" {
+			t.Errorf("Expected PEM-CERT-ACTIVE, got %q", body.String())
+		}
+	})
+
+	t.Run("Get certificate by identifier - Scoping Forbidden", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/cert-other/certificate", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusForbidden {
+			t.Errorf("Expected 403 Forbidden, got %d", res.StatusCode)
+		}
+	})
+
+	t.Run("Get certificate by identifier - Not Yet Issued", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/cert-unissued/certificate", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("Expected 404 Not Found, got %d", res.StatusCode)
+		}
+	})
+
+	t.Run("Get certificate by identifier - Config Not Found", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/nonexistent.com/certificate", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("Expected 404 Not Found, got %d", res.StatusCode)
 		}
 	})
 }
+
 

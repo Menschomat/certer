@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"certer/internal/app/config"
 )
@@ -224,4 +225,120 @@ func (s *Server) handleDeleteConfigCertificates(w http.ResponseWriter, r *http.R
 
 	deleteConfigResource(s, w, r, id, &s.cfg.State.Certificates, getID, "certificate configuration not found", authCheck, nil)
 }
+
+func (s *Server) handleGetCertificateRaw(w http.ResponseWriter, r *http.Request) {
+	s.handleGetRawFile(w, r, false)
+}
+
+func (s *Server) handleGetPrivateKeyRaw(w http.ResponseWriter, r *http.Request) {
+	s.handleGetRawFile(w, r, true)
+}
+
+func (s *Server) handleGetRawFile(w http.ResponseWriter, r *http.Request, getPrivateKey bool) {
+	identifier := r.PathValue("identifier")
+	if identifier == "" {
+		http.Error(w, "missing identifier", http.StatusBadRequest)
+		return
+	}
+
+	allowedCertificates := allowedCertificatesFromContext(r.Context())
+	allowedTeams := allowedTeamsFromContext(r.Context())
+	isAdmin := isAdminFromContext(r.Context())
+
+	s.mu.RLock()
+	allCerts := s.cfg.AllCertificates()
+	s.mu.RUnlock()
+
+	cc := s.findCertificateByIdentifier(identifier, allCerts)
+	if cc == nil {
+		http.Error(w, "certificate configuration not found", http.StatusNotFound)
+		return
+	}
+
+	// Scoping / Authorization check
+	if !isAdmin {
+		if len(allowedCertificates) > 0 && !isCertificateAllowed(cc.ID, allowedCertificates) {
+			http.Error(w, "forbidden: access to this certificate is restricted", http.StatusForbidden)
+			return
+		}
+		if !isTeamAllowed(cc.TeamID, allowedTeams) {
+			http.Error(w, "forbidden: access to this team's certificates is restricted", http.StatusForbidden)
+			return
+		}
+	} else {
+		// Scoped Admin check
+		if len(allowedTeams) > 0 && !isTeamAllowed(cc.TeamID, allowedTeams) {
+			http.Error(w, "forbidden: access to this team's certificates is restricted", http.StatusForbidden)
+			return
+		}
+	}
+
+	var filePath string
+	if getPrivateKey {
+		filePath = filepath.Join(s.storageDir, cc.ID+".key")
+	} else {
+		filePath = filepath.Join(s.storageDir, cc.ID+".crt")
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "certificate not yet issued", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to read file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
+func (s *Server) findCertificateByIdentifier(identifier string, certs []config.CertConfig) *config.CertConfig {
+	var bestMatch *config.CertConfig
+	var bestMatchIsPrimary bool
+
+	for i := range certs {
+		cc := &certs[i]
+
+		// 1. Exact ID Match (Highest Priority)
+		if cc.ID == identifier {
+			return cc
+		}
+
+		// 2. Primary Domain Match
+		if cc.Primary == identifier {
+			// Tie-breaker: If we already have a primary match, take the newer one (larger UUIDv7 ID)
+			if bestMatch == nil || !bestMatchIsPrimary || cc.ID > bestMatch.ID {
+				bestMatch = cc
+				bestMatchIsPrimary = true
+			}
+			continue
+		}
+
+		// 3. SAN Match (Only if we haven't found a primary domain match yet)
+		if !bestMatchIsPrimary {
+			for _, san := range cc.Sans {
+				if san == identifier || matchesWildcard(san, identifier) {
+					// Tie-breaker: If we already have a SAN match, take the newer one (larger UUIDv7)
+					if bestMatch == nil || cc.ID > bestMatch.ID {
+						bestMatch = cc
+					}
+					break
+				}
+			}
+		}
+	}
+	return bestMatch
+}
+
+func matchesWildcard(pattern, domain string) bool {
+	if !strings.HasPrefix(pattern, "*.") {
+		return false
+	}
+	suffix := pattern[1:] // e.g. ".example.com"
+	return strings.HasSuffix(domain, suffix) && strings.Count(domain, ".") == strings.Count(pattern, ".")
+}
+
 
