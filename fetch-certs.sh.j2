@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+AUTH_TOKEN="{{ auth_token }}"
+BASE_URL="{{ base_url }}"
+DEST_DIR="{{ dest_dir }}"
+
+CERT_DOMAINS="{% for domain in cert_domains %}{{ domain }} {% endfor %}"
+
+mkdir -p "$DEST_DIR"
+
+for DOMAIN in $CERT_DOMAINS; do
+  echo "Fetching cert for $DOMAIN..."
+  curl --fail -s -H "Authorization: Bearer $AUTH_TOKEN" "$BASE_URL/api/v1/certificates/${DOMAIN}/certificate" -o "$DEST_DIR/${DOMAIN}.crt"
+  curl --fail -s -H "Authorization: Bearer $AUTH_TOKEN" "$BASE_URL/api/v1/certificates/${DOMAIN}/private-key" -o "$DEST_DIR/${DOMAIN}.key"
+  chmod 600 "$DEST_DIR/${DOMAIN}.crt" "$DEST_DIR/${DOMAIN}.key"
+done

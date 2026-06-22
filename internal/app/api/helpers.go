@@ -35,22 +35,41 @@ func isAdminFromContext(ctx context.Context) bool {
 	return false
 }
 
-func isTeamAllowed(teamID string, allowedTeams []string) bool {
-	for _, t := range allowedTeams {
-		if t == teamID {
+func contains(slice []string, val string) bool {
+	for _, s := range slice {
+		if s == val {
 			return true
 		}
 	}
 	return false
 }
 
-func isCertificateAllowed(certID string, allowed []string) bool {
-	for _, a := range allowed {
-		if a == certID {
-			return true
+func getCertConfigID(c config.CertConfig) string {
+	return c.ID
+}
+
+func getAPIKeyConfigID(k config.APIKeyConfig) string {
+	return k.ID
+}
+
+func getTeamConfigID(t config.TeamConfig) string {
+	return t.ID
+}
+
+func checkCertAccess(isAdmin bool, certID, teamID string, allowedCerts, allowedTeams []string) (bool, string) {
+	if !isAdmin {
+		if len(allowedCerts) > 0 && !contains(allowedCerts, certID) {
+			return false, "forbidden: access to this certificate is restricted"
+		}
+		if !contains(allowedTeams, teamID) {
+			return false, "forbidden: access to this team's certificates is restricted"
+		}
+	} else {
+		if len(allowedTeams) > 0 && !contains(allowedTeams, teamID) {
+			return false, "forbidden: access to this team's certificates is restricted"
 		}
 	}
-	return false
+	return true, ""
 }
 
 func isSubset(sub, parent []string) bool {
@@ -174,12 +193,12 @@ func updateConfigResource[T any](
 	}
 
 	mutate(&(*stateSlice)[foundIdx])
-	s.mu.Unlock()
-
-	if err := s.saveAndReload(r.Context()); err != nil {
+	if err := s.saveAndReloadLocked(r.Context()); err != nil {
+		s.mu.Unlock()
 		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
 		return
 	}
+	s.mu.Unlock()
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -223,13 +242,22 @@ func deleteConfigResource[T any](
 	}
 
 	*stateSlice = removeAtIndex(*stateSlice, foundIdx)
-	s.mu.Unlock()
-
-	if err := s.saveAndReload(r.Context()); err != nil {
+	if err := s.saveAndReloadLocked(r.Context()); err != nil {
+		s.mu.Unlock()
 		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
 		return
 	}
+	s.mu.Unlock()
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func requireRootAdmin(w http.ResponseWriter, r *http.Request) bool {
+	allowedTeams := allowedTeamsFromContext(r.Context())
+	if len(allowedTeams) > 0 {
+		respondWithError(w, http.StatusForbidden, "forbidden: only root admins can manage team configurations")
+		return false
+	}
+	return true
 }
 

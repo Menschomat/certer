@@ -55,7 +55,7 @@ func TestControlPlaneAPI_APIKeys(t *testing.T) {
 		t.Fatalf("Failed to save initial config: %v", err)
 	}
 
-	cfg := config.Load()
+	cfg := config.MustLoad()
 	server := NewServer(tmpDir, cfg, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
@@ -128,7 +128,7 @@ func TestControlPlaneAPI_APIKeys(t *testing.T) {
 			t.Errorf("Expected 64-character cleartext token, got %s (length %d)", resp.CleartextToken, len(resp.CleartextToken))
 		}
 
-		loadedCfg := config.Load()
+		loadedCfg := config.MustLoad()
 		found := false
 		for _, k := range loadedCfg.AllAPIKeys() {
 			if k.ID == newKeyID {
@@ -170,7 +170,7 @@ func TestControlPlaneAPI_APIKeys(t *testing.T) {
 			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
 		}
 
-		loadedCfg := config.Load()
+		loadedCfg := config.MustLoad()
 		for _, k := range loadedCfg.AllAPIKeys() {
 			if k.ID == newKeyID {
 				if !k.Admin || len(k.AllowedCertificates) != 1 || k.AllowedCertificates[0] != "cert-id-1" || k.Description != "Updated Deploy Key" || len(k.AllowedTeams) != 1 || k.AllowedTeams[0] != "team-id-1" {
@@ -246,7 +246,7 @@ func TestScopedAdmin_APIKeys(t *testing.T) {
 		t.Fatalf("Failed to write state: %v", err)
 	}
 
-	cfg := config.Load()
+	cfg := config.MustLoad()
 	server := NewServer(tmpDir, cfg, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()

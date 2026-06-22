@@ -196,7 +196,7 @@ func TestControlPlaneAPI_Certificates(t *testing.T) {
 		t.Fatalf("Failed to save initial config: %v", err)
 	}
 
-	cfg := config.Load()
+	cfg := config.MustLoad()
 	reloader := &MockReloader{}
 	server := NewServer(tmpDir, cfg, reloader)
 	ts := httptest.NewServer(server.Routes())
@@ -267,7 +267,7 @@ func TestControlPlaneAPI_Certificates(t *testing.T) {
 		}
 
 		// Verify saved config file has the new certificate
-		loadedCfg := config.Load()
+		loadedCfg := config.MustLoad()
 		allCerts := loadedCfg.AllCertificates()
 		if len(allCerts) != 2 || allCerts[1].Primary != "newdomain.com" || allCerts[1].ID != newCertID || allCerts[1].DNSProvider != "hetzner" {
 			t.Errorf("Expected new certificate to be saved on disk with DNS provider, got: %+v", allCerts)
@@ -317,7 +317,7 @@ func TestControlPlaneAPI_Certificates(t *testing.T) {
 			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
 		}
 
-		loadedCfg := config.Load()
+		loadedCfg := config.MustLoad()
 		for _, c := range loadedCfg.AllCertificates() {
 			if c.ID == newCertID {
 				if len(c.Sans) != 2 || c.Sans[0] != "admin.example.com" || c.Description != "Updated Description" || c.DNSProvider != "cloudflare" {
@@ -406,7 +406,7 @@ func TestScopedAdmin_Certificates(t *testing.T) {
 		t.Fatalf("Failed to write state: %v", err)
 	}
 
-	cfg := config.Load()
+	cfg := config.MustLoad()
 	server := NewServer(tmpDir, cfg, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
@@ -557,7 +557,7 @@ func TestDefaultDeny_UnassignedCertificates(t *testing.T) {
 		t.Fatalf("Failed to write state: %v", err)
 	}
 
-	cfg := config.Load()
+	cfg := config.MustLoad()
 	server := NewServer(tmpDir, cfg, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
@@ -646,7 +646,7 @@ func TestStaticResourceProtection_Certificates(t *testing.T) {
 		t.Fatalf("Failed to save initial config: %v", err)
 	}
 
-	cfg := config.Load()
+	cfg := config.MustLoad()
 	server := NewServer(tmpDir, cfg, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
@@ -729,7 +729,7 @@ func TestAdmin_FetchCertificates(t *testing.T) {
 		}
 	}
 
-	cfg := config.Load()
+	cfg := config.MustLoad()
 	server := NewServer(tmpDir, cfg, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
@@ -840,7 +840,7 @@ func TestRawCertificateEndpoints(t *testing.T) {
 		t.Fatalf("Write key failed: %v", err)
 	}
 
-	cfg := config.Load()
+	cfg := config.MustLoad()
 	server := NewServer(tmpDir, cfg, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()

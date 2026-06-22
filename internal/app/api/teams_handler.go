@@ -16,7 +16,7 @@ func (s *Server) handleGetConfigTeams(w http.ResponseWriter, r *http.Request) {
 	var filtered []config.TeamConfig
 	for _, team := range allTeams {
 		if len(allowedTeams) > 0 {
-			if team.ID == "system" || isTeamAllowed(team.ID, allowedTeams) {
+			if team.ID == defaultTeamID || contains(allowedTeams, team.ID) {
 				filtered = append(filtered, team)
 			}
 		} else {
@@ -28,9 +28,7 @@ func (s *Server) handleGetConfigTeams(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePostConfigTeams(w http.ResponseWriter, r *http.Request) {
-	allowedTeams := allowedTeamsFromContext(r.Context())
-	if len(allowedTeams) > 0 {
-		respondWithError(w, http.StatusForbidden, "forbidden: only root admins can manage team configurations")
+	if !requireRootAdmin(w, r) {
 		return
 	}
 
@@ -52,12 +50,12 @@ func (s *Server) handlePostConfigTeams(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	s.cfg.State.Teams = append(s.cfg.State.Teams, payload)
-	s.mu.Unlock()
-
-	if err := s.saveAndReload(r.Context()); err != nil {
+	if err := s.saveAndReloadLocked(r.Context()); err != nil {
+		s.mu.Unlock()
 		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
 		return
 	}
+	s.mu.Unlock()
 
 	respondWithJSON(w, http.StatusCreated, payload)
 }
@@ -65,18 +63,16 @@ func (s *Server) handlePostConfigTeams(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePutConfigTeams(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if s.checkStatic(w, id, func() bool {
-		if id == "system" {
+		if id == defaultTeamID {
 			return true
 		}
-		_, is := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
+		_, is := findByID(s.cfg.Teams, id, getTeamConfigID)
 		return is
 	}) {
 		return
 	}
 
-	allowedTeams := allowedTeamsFromContext(r.Context())
-	if len(allowedTeams) > 0 {
-		respondWithError(w, http.StatusForbidden, "forbidden: only root admins can manage team configurations")
+	if !requireRootAdmin(w, r) {
 		return
 	}
 
@@ -85,34 +81,30 @@ func (s *Server) handlePutConfigTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	getID := func(t config.TeamConfig) string { return t.ID }
 	mutate := func(existing *config.TeamConfig) {
 		existing.Name = payload.Name
 		existing.Description = payload.Description
 	}
 
-	updateConfigResource(s, w, r, id, &s.cfg.State.Teams, getID, "team configuration not found", nil, mutate)
+	updateConfigResource(s, w, r, id, &s.cfg.State.Teams, getTeamConfigID, "team configuration not found", nil, mutate)
 }
 
 func (s *Server) handleDeleteConfigTeams(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if s.checkStatic(w, id, func() bool {
-		if id == "system" {
+		if id == defaultTeamID {
 			return true
 		}
-		_, is := findByID(s.cfg.Teams, id, func(t config.TeamConfig) string { return t.ID })
+		_, is := findByID(s.cfg.Teams, id, getTeamConfigID)
 		return is
 	}) {
 		return
 	}
 
-	allowedTeams := allowedTeamsFromContext(r.Context())
-	if len(allowedTeams) > 0 {
-		respondWithError(w, http.StatusForbidden, "forbidden: only root admins can manage team configurations")
+	if !requireRootAdmin(w, r) {
 		return
 	}
 
-	getID := func(t config.TeamConfig) string { return t.ID }
 	preDeleteCheck := func(existing config.TeamConfig) (bool, int, string) {
 		// Held under s.mu.Lock() in deleteConfigResource
 		for _, cert := range s.cfg.AllCertificates() {
@@ -130,6 +122,6 @@ func (s *Server) handleDeleteConfigTeams(w http.ResponseWriter, r *http.Request)
 		return true, 0, ""
 	}
 
-	deleteConfigResource(s, w, r, id, &s.cfg.State.Teams, getID, "team configuration not found", nil, preDeleteCheck)
+	deleteConfigResource(s, w, r, id, &s.cfg.State.Teams, getTeamConfigID, "team configuration not found", nil, preDeleteCheck)
 }
 

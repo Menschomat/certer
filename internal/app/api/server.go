@@ -16,6 +16,12 @@ type ConfigReloader interface {
 	ReloadConfig(ctx context.Context, certificates []config.CertConfig)
 }
 
+const (
+	bearerPrefix     = "Bearer "
+	configPathPrefix = "/api/v1/config"
+	defaultTeamID    = "system"
+)
+
 // Server handles API routes and dependencies.
 type Server struct {
 	mu         sync.RWMutex
@@ -114,7 +120,7 @@ func (s *Server) resolveToken(token string) *config.APIKeyConfig {
 func (s *Server) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
-		token := strings.TrimPrefix(authHeader, "Bearer ")
+		token := strings.TrimPrefix(authHeader, bearerPrefix)
 
 		if token == "" {
 			slog.Warn("Unauthorized access attempt: missing token", "remote_addr", r.RemoteAddr, "path", r.URL.Path)
@@ -133,7 +139,7 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		isConfigPath := strings.HasPrefix(r.URL.Path, "/api/v1/config")
+		isConfigPath := strings.HasPrefix(r.URL.Path, configPathPrefix)
 		isCertRetrieval := r.Method == "GET" && r.URL.Path == "/api/v1/certificates"
 
 		if matchedKey.Admin {
@@ -171,9 +177,7 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"up"}`))
+	respondWithJSON(w, http.StatusOK, map[string]string{"status": "up"})
 }
 
 // ReloadConfig updates the server's certificates and API keys in a thread-safe manner.
@@ -184,10 +188,7 @@ func (s *Server) ReloadConfig(certificates []config.CertConfig, apiKeys []config
 	s.cfg.State.APIKeys = apiKeys
 }
 
-func (s *Server) saveAndReload(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Server) saveAndReloadLocked(ctx context.Context) error {
 	// 1. Save state to disk
 	if err := s.cfg.SaveState(); err != nil {
 		slog.Error("Failed to save state on disk", "error", err)

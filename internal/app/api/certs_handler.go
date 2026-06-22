@@ -40,22 +40,8 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if !isAdmin {
-			// If allowedCertificates is non-empty, only return certificates explicitly listed
-			if len(allowedCertificates) > 0 && !isCertificateAllowed(cc.ID, allowedCertificates) {
-				continue
-			}
-
-			// Only return certificates for teams authorized by the token
-			if !isTeamAllowed(cc.TeamID, allowedTeams) {
-				continue
-			}
-		} else {
-			// Admin Token:
-			// Scoped Admin is restricted to allowed teams. Root Admin (empty allowedTeams) has access to all.
-			if len(allowedTeams) > 0 && !isTeamAllowed(cc.TeamID, allowedTeams) {
-				continue
-			}
+		if allowed, _ := checkCertAccess(isAdmin, cc.ID, cc.TeamID, allowedCertificates, allowedTeams); !allowed {
+			continue
 		}
 
 		certPath := filepath.Join(s.storageDir, cc.ID+".crt")
@@ -94,7 +80,7 @@ func (s *Server) handleGetConfigCertificates(w http.ResponseWriter, r *http.Requ
 	var filtered []config.CertConfig
 	for _, cert := range allCerts {
 		if len(allowedTeams) > 0 {
-			if isTeamAllowed(cert.TeamID, allowedTeams) {
+			if contains(allowedTeams, cert.TeamID) {
 				filtered = append(filtered, cert)
 			}
 		} else {
@@ -115,12 +101,12 @@ func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if payload.TeamID == "" {
-		payload.TeamID = "system"
+		payload.TeamID = defaultTeamID
 	}
 
 	allowedTeams := allowedTeamsFromContext(r.Context())
 	if len(allowedTeams) > 0 {
-		if !isTeamAllowed(payload.TeamID, allowedTeams) {
+		if !contains(allowedTeams, payload.TeamID) {
 			respondWithError(w, http.StatusForbidden, "forbidden: cannot manage certificates for this team")
 			return
 		}
@@ -143,12 +129,12 @@ func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Req
 
 	s.mu.Lock()
 	s.cfg.State.Certificates = append(s.cfg.State.Certificates, payload)
-	s.mu.Unlock()
-
-	if err := s.saveAndReload(r.Context()); err != nil {
+	if err := s.saveAndReloadLocked(r.Context()); err != nil {
+		s.mu.Unlock()
 		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
 		return
 	}
+	s.mu.Unlock()
 
 	respondWithJSON(w, http.StatusCreated, payload)
 }
@@ -156,7 +142,7 @@ func (s *Server) handlePostConfigCertificates(w http.ResponseWriter, r *http.Req
 func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if s.checkStatic(w, id, func() bool {
-		_, is := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
+		_, is := findByID(s.cfg.Certificates, id, getCertConfigID)
 		return is
 	}) {
 		return
@@ -167,7 +153,7 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if payload.TeamID == "" {
-		payload.TeamID = "system"
+		payload.TeamID = defaultTeamID
 	}
 
 	s.mu.RLock()
@@ -180,13 +166,12 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 
 	allowedTeams := allowedTeamsFromContext(r.Context())
 
-	getID := func(c config.CertConfig) string { return c.ID }
 	authCheck := func(existingCert config.CertConfig) (bool, int, string) {
 		if len(allowedTeams) > 0 {
-			if !isTeamAllowed(existingCert.TeamID, allowedTeams) {
+			if !contains(allowedTeams, existingCert.TeamID) {
 				return false, http.StatusNotFound, "certificate configuration not found"
 			}
-			if !isTeamAllowed(payload.TeamID, allowedTeams) {
+			if !contains(allowedTeams, payload.TeamID) {
 				return false, http.StatusForbidden, "forbidden: cannot manage certificates for this team"
 			}
 		}
@@ -200,30 +185,29 @@ func (s *Server) handlePutConfigCertificates(w http.ResponseWriter, r *http.Requ
 		existing.DNSProvider = payload.DNSProvider
 	}
 
-	updateConfigResource(s, w, r, id, &s.cfg.State.Certificates, getID, "certificate configuration not found", authCheck, mutate)
+	updateConfigResource(s, w, r, id, &s.cfg.State.Certificates, getCertConfigID, "certificate configuration not found", authCheck, mutate)
 }
 
 func (s *Server) handleDeleteConfigCertificates(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if s.checkStatic(w, id, func() bool {
-		_, is := findByID(s.cfg.Certificates, id, func(c config.CertConfig) string { return c.ID })
+		_, is := findByID(s.cfg.Certificates, id, getCertConfigID)
 		return is
 	}) {
 		return
 	}
 
 	allowedTeams := allowedTeamsFromContext(r.Context())
-	getID := func(c config.CertConfig) string { return c.ID }
 	authCheck := func(existingCert config.CertConfig) (bool, int, string) {
 		if len(allowedTeams) > 0 {
-			if !isTeamAllowed(existingCert.TeamID, allowedTeams) {
+			if !contains(allowedTeams, existingCert.TeamID) {
 				return false, http.StatusNotFound, "certificate configuration not found"
 			}
 		}
 		return true, 0, ""
 	}
 
-	deleteConfigResource(s, w, r, id, &s.cfg.State.Certificates, getID, "certificate configuration not found", authCheck, nil)
+	deleteConfigResource(s, w, r, id, &s.cfg.State.Certificates, getCertConfigID, "certificate configuration not found", authCheck, nil)
 }
 
 func (s *Server) handleGetCertificateRaw(w http.ResponseWriter, r *http.Request) {
@@ -237,7 +221,7 @@ func (s *Server) handleGetPrivateKeyRaw(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleGetRawFile(w http.ResponseWriter, r *http.Request, getPrivateKey bool) {
 	identifier := r.PathValue("identifier")
 	if identifier == "" {
-		http.Error(w, "missing identifier", http.StatusBadRequest)
+		respondWithError(w, http.StatusBadRequest, "missing identifier")
 		return
 	}
 
@@ -251,26 +235,14 @@ func (s *Server) handleGetRawFile(w http.ResponseWriter, r *http.Request, getPri
 
 	cc := s.findCertificateByIdentifier(identifier, allCerts)
 	if cc == nil {
-		http.Error(w, "certificate configuration not found", http.StatusNotFound)
+		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
 		return
 	}
 
 	// Scoping / Authorization check
-	if !isAdmin {
-		if len(allowedCertificates) > 0 && !isCertificateAllowed(cc.ID, allowedCertificates) {
-			http.Error(w, "forbidden: access to this certificate is restricted", http.StatusForbidden)
-			return
-		}
-		if !isTeamAllowed(cc.TeamID, allowedTeams) {
-			http.Error(w, "forbidden: access to this team's certificates is restricted", http.StatusForbidden)
-			return
-		}
-	} else {
-		// Scoped Admin check
-		if len(allowedTeams) > 0 && !isTeamAllowed(cc.TeamID, allowedTeams) {
-			http.Error(w, "forbidden: access to this team's certificates is restricted", http.StatusForbidden)
-			return
-		}
+	if allowed, msg := checkCertAccess(isAdmin, cc.ID, cc.TeamID, allowedCertificates, allowedTeams); !allowed {
+		respondWithError(w, http.StatusForbidden, msg)
+		return
 	}
 
 	var filePath string
@@ -283,10 +255,10 @@ func (s *Server) handleGetRawFile(w http.ResponseWriter, r *http.Request, getPri
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			http.Error(w, "certificate not yet issued", http.StatusNotFound)
+			respondWithError(w, http.StatusNotFound, "certificate not yet issued")
 			return
 		}
-		http.Error(w, "failed to read file: "+err.Error(), http.StatusInternalServerError)
+		respondWithError(w, http.StatusInternalServerError, "failed to read certificate file")
 		return
 	}
 

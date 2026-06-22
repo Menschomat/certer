@@ -88,12 +88,12 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 
 	s.mu.Lock()
 	s.cfg.State.APIKeys = append(s.cfg.State.APIKeys, payload)
-	s.mu.Unlock()
-
-	if err := s.saveAndReload(r.Context()); err != nil {
+	if err := s.saveAndReloadLocked(r.Context()); err != nil {
+		s.mu.Unlock()
 		respondWithError(w, http.StatusInternalServerError, "failed to persist configuration changes")
 		return
 	}
+	s.mu.Unlock()
 
 	resp := APIKeyResponse{
 		ID:                  payload.ID,
@@ -111,7 +111,7 @@ func (s *Server) handlePostConfigAPIKeys(w http.ResponseWriter, r *http.Request)
 func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if s.checkStatic(w, id, func() bool {
-		_, is := findByID(s.cfg.APIKeys, id, func(k config.APIKeyConfig) string { return k.ID })
+		_, is := findByID(s.cfg.APIKeys, id, getAPIKeyConfigID)
 		return is
 	}) {
 		return
@@ -138,7 +138,6 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 
 	allowedTeams := allowedTeamsFromContext(r.Context())
 
-	getID := func(k config.APIKeyConfig) string { return k.ID }
 	authCheck := func(existingKey config.APIKeyConfig) (bool, int, string) {
 		if len(allowedTeams) > 0 {
 			if !canManageKey(allowedTeams, existingKey) {
@@ -157,20 +156,19 @@ func (s *Server) handlePutConfigAPIKeys(w http.ResponseWriter, r *http.Request) 
 		existing.Description = payload.Description
 	}
 
-	updateConfigResource(s, w, r, id, &s.cfg.State.APIKeys, getID, "API key configuration not found", authCheck, mutate)
+	updateConfigResource(s, w, r, id, &s.cfg.State.APIKeys, getAPIKeyConfigID, "API key configuration not found", authCheck, mutate)
 }
 
 func (s *Server) handleDeleteConfigAPIKeys(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if s.checkStatic(w, id, func() bool {
-		_, is := findByID(s.cfg.APIKeys, id, func(k config.APIKeyConfig) string { return k.ID })
+		_, is := findByID(s.cfg.APIKeys, id, getAPIKeyConfigID)
 		return is
 	}) {
 		return
 	}
 
 	allowedTeams := allowedTeamsFromContext(r.Context())
-	getID := func(k config.APIKeyConfig) string { return k.ID }
 	authCheck := func(existingKey config.APIKeyConfig) (bool, int, string) {
 		if len(allowedTeams) > 0 {
 			if !canManageKey(allowedTeams, existingKey) {
@@ -180,7 +178,7 @@ func (s *Server) handleDeleteConfigAPIKeys(w http.ResponseWriter, r *http.Reques
 		return true, 0, ""
 	}
 
-	deleteConfigResource(s, w, r, id, &s.cfg.State.APIKeys, getID, "API key configuration not found", authCheck, nil)
+	deleteConfigResource(s, w, r, id, &s.cfg.State.APIKeys, getAPIKeyConfigID, "API key configuration not found", authCheck, nil)
 }
 
 func (s *Server) areCertificatesValidForTeams(allowedCerts, allowedTeams []string, isAdmin bool) (bool, string) {

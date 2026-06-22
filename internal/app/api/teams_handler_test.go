@@ -81,7 +81,7 @@ func TestTeamConfigAndScoping(t *testing.T) {
 		}
 	}
 
-	cfg := config.Load()
+	cfg := config.MustLoad()
 	server := NewServer(tmpDir, cfg, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
@@ -139,7 +139,7 @@ func TestTeamConfigAndScoping(t *testing.T) {
 			t.Errorf("Expected generated UUID in response")
 		}
 
-		loadedCfg := config.Load()
+		loadedCfg := config.MustLoad()
 		if len(loadedCfg.AllTeams()) != 4 {
 			t.Errorf("Expected 4 teams total (including system), got %d: %+v", len(loadedCfg.AllTeams()), loadedCfg.AllTeams())
 		}
@@ -164,7 +164,7 @@ func TestTeamConfigAndScoping(t *testing.T) {
 			t.Errorf("Expected 200 OK, got %d", res.StatusCode)
 		}
 
-		loadedCfg := config.Load()
+		loadedCfg := config.MustLoad()
 		found := false
 		for _, tVal := range loadedCfg.AllTeams() {
 			if tVal.ID == createdTeamID {
@@ -220,7 +220,7 @@ func TestTeamConfigAndScoping(t *testing.T) {
 			t.Errorf("Expected 204 No Content, got %d", res.StatusCode)
 		}
 
-		loadedCfg := config.Load()
+		loadedCfg := config.MustLoad()
 		if len(loadedCfg.AllTeams()) != 3 {
 			t.Errorf("Expected 3 teams (including system) saved on disk after delete, got %d", len(loadedCfg.AllTeams()))
 		}
@@ -279,7 +279,7 @@ func TestStaticResourceProtection_Teams(t *testing.T) {
 		t.Fatalf("Failed to save initial config: %v", err)
 	}
 
-	cfg := config.Load()
+	cfg := config.MustLoad()
 	server := NewServer(tmpDir, cfg, nil)
 	ts := httptest.NewServer(server.Routes())
 	defer ts.Close()
