@@ -23,7 +23,11 @@ func main() {
 	legolog.SetDefault(logger)
 
 	// Load config
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Error("Failed to load configuration", "error", err)
+		os.Exit(1)
+	}
 	logger.Info("Starting server", "env", cfg.Env, "port", cfg.Port)
 
 	// Context for application lifecycle

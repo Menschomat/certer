@@ -10,48 +10,16 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"certer/internal/app/api"
+	"certer/internal/app/config"
 )
 
-type TeamConfig struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-}
-
-type CertConfig struct {
-	ID          string   `json:"id"`
-	Primary     string   `json:"primary"`
-	Sans        []string `json:"sans"`
-	TeamID      string   `json:"team_id"`
-	Description string   `json:"description"`
-	DNSProvider string   `json:"dns_provider,omitempty"`
-}
-
-type APIKeyConfig struct {
-	ID                  string   `json:"id"`
-	Token               string   `json:"token"`
-	Description         string   `json:"description"`
-	AllowedCertificates []string `json:"allowed_certificates,omitempty"`
-	AllowedTeams        []string `json:"allowed_teams"`
-	Admin               bool     `json:"admin"`
-}
-
-type CertificateResponse struct {
-	ID           string   `json:"id"`
-	Domain       string   `json:"domain"`
-	Sans         []string `json:"sans"`
-	Issued       bool     `json:"issued"`
-	Certificate  string   `json:"certificate,omitempty"`
-	PrivateKey   string   `json:"private_key,omitempty"`
-	CertFilename string   `json:"cert_filename,omitempty"`
-	KeyFilename  string   `json:"key_filename,omitempty"`
-}
-
 type AuditData struct {
-	Teams        []TeamConfig          `json:"teams"`
-	CertConfigs  []CertConfig          `json:"cert_configs"`
-	APIKeys      []APIKeyConfig        `json:"api_keys"`
-	IssuedCerts  []CertificateResponse `json:"issued_certs"`
+	Teams        []config.TeamConfig          `json:"teams"`
+	CertConfigs  []config.CertConfig          `json:"cert_configs"`
+	APIKeys      []config.APIKeyConfig        `json:"api_keys"`
+	IssuedCerts  []api.CertificateResponse    `json:"issued_certs"`
 }
 
 func main() {

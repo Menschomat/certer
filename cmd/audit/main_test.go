@@ -7,21 +7,24 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"certer/internal/app/api"
+	"certer/internal/app/config"
 )
 
 func TestFormatMarkdown(t *testing.T) {
 	data := &AuditData{
-		Teams: []TeamConfig{
+		Teams: []config.TeamConfig{
 			{ID: "system", Name: "System", Description: "System Team"},
 			{ID: "team-1", Name: "Dev Team", Description: "Devs"},
 		},
-		CertConfigs: []CertConfig{
+		CertConfigs: []config.CertConfig{
 			{ID: "cert-1", Primary: "example.com", Sans: []string{"*.example.com"}, TeamID: "team-1", Description: "Test Cert", DNSProvider: "hetzner"},
 		},
-		APIKeys: []APIKeyConfig{
+		APIKeys: []config.APIKeyConfig{
 			{ID: "key-1", Description: "Key 1", AllowedCertificates: []string{"cert-1"}, AllowedTeams: []string{"team-1"}, Admin: false},
 		},
-		IssuedCerts: []CertificateResponse{
+		IssuedCerts: []api.CertificateResponse{
 			{ID: "cert-1", Domain: "example.com", Sans: []string{"*.example.com"}, Issued: true},
 		},
 	}
@@ -48,7 +51,7 @@ func TestFormatMarkdown(t *testing.T) {
 
 func TestFormatJSON(t *testing.T) {
 	data := &AuditData{
-		Teams: []TeamConfig{
+		Teams: []config.TeamConfig{
 			{ID: "team-1", Name: "Dev Team"},
 		},
 	}
@@ -79,13 +82,13 @@ func TestFetchAuditData(t *testing.T) {
 
 		switch r.URL.Path {
 		case "/api/v1/config/teams":
-			_ = json.NewEncoder(w).Encode([]TeamConfig{{ID: "team-1", Name: "Team 1"}})
+			_ = json.NewEncoder(w).Encode([]config.TeamConfig{{ID: "team-1", Name: "Team 1"}})
 		case "/api/v1/config/certificates":
-			_ = json.NewEncoder(w).Encode([]CertConfig{{ID: "cert-1", Primary: "example.com"}})
+			_ = json.NewEncoder(w).Encode([]config.CertConfig{{ID: "cert-1", Primary: "example.com"}})
 		case "/api/v1/config/api_keys":
-			_ = json.NewEncoder(w).Encode([]APIKeyConfig{{ID: "key-1", Description: "Key 1"}})
+			_ = json.NewEncoder(w).Encode([]config.APIKeyConfig{{ID: "key-1", Description: "Key 1"}})
 		case "/api/v1/certificates":
-			_ = json.NewEncoder(w).Encode([]CertificateResponse{{ID: "cert-1", Domain: "example.com", Issued: true}})
+			_ = json.NewEncoder(w).Encode([]api.CertificateResponse{{ID: "cert-1", Domain: "example.com", Issued: true}})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
