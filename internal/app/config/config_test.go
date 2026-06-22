@@ -2,7 +2,6 @@ package config
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -65,7 +64,7 @@ func TestLoadConfig(t *testing.T) {
 	os.Setenv("CONFIG_PATH", configPath)
 	defer os.Unsetenv("CONFIG_PATH")
 
-	cfg := Load()
+	cfg := MustLoad()
 
 	if cfg.Port != "9090" {
 		t.Errorf("Expected Port '9090', got %q", cfg.Port)
@@ -133,7 +132,7 @@ func TestLoadConfigEnvDynamicACME(t *testing.T) {
 		os.Setenv("CONFIG_PATH", "/nonexistent_config_path_trigger_env_fallback.json")
 		defer os.Unsetenv("CONFIG_PATH")
 
-		cfg := Load()
+		cfg := MustLoad()
 		if cfg.Env != "development" {
 			t.Errorf("expected default env development, got %q", cfg.Env)
 		}
@@ -151,7 +150,7 @@ func TestLoadConfigEnvDynamicACME(t *testing.T) {
 		defer os.Unsetenv("ENV")
 		defer os.Unsetenv("CONFIG_PATH")
 
-		cfg := Load()
+		cfg := MustLoad()
 		if cfg.Env != "production" {
 			t.Errorf("expected env production, got %q", cfg.Env)
 		}
@@ -170,7 +169,7 @@ func TestLoadConfigEnvDynamicACME(t *testing.T) {
 		defer os.Unsetenv("ACME_DIRECTORY_URL")
 		defer os.Unsetenv("CONFIG_PATH")
 
-		cfg := Load()
+		cfg := MustLoad()
 		if cfg.Env != "production" {
 			t.Errorf("expected env production, got %q", cfg.Env)
 		}
@@ -188,7 +187,7 @@ func TestLoadConfigEnvDynamicACME(t *testing.T) {
 		os.Setenv("CONFIG_PATH", configPath)
 		defer os.Unsetenv("CONFIG_PATH")
 
-		cfg := Load()
+		cfg := MustLoad()
 		if cfg.Env != "production" {
 			t.Errorf("expected env production, got %q", cfg.Env)
 		}
@@ -212,7 +211,7 @@ func TestLoadConfigZeroSSL(t *testing.T) {
 		defer os.Unsetenv("EAB_HMAC")
 		defer os.Unsetenv("CONFIG_PATH")
 
-		cfg := Load()
+		cfg := MustLoad()
 		if cfg.ACMEProvider != "zerossl" {
 			t.Errorf("expected provider 'zerossl', got %q", cfg.ACMEProvider)
 		}
@@ -240,7 +239,7 @@ func TestLoadConfigZeroSSL(t *testing.T) {
 		os.Setenv("CONFIG_PATH", configPath)
 		defer os.Unsetenv("CONFIG_PATH")
 
-		cfg := Load()
+		cfg := MustLoad()
 		if cfg.ACMEProvider != "zerossl" {
 			t.Errorf("expected provider 'zerossl', got %q", cfg.ACMEProvider)
 		}
@@ -285,7 +284,7 @@ func TestLoadConfigEnvOverrides(t *testing.T) {
 		os.Unsetenv("DNS_PROVIDER")
 	}()
 
-	cfg := Load()
+	cfg := MustLoad()
 
 	if cfg.Port != "9999" {
 		t.Errorf("Expected Port '9999' from env override, got %q", cfg.Port)
@@ -319,7 +318,7 @@ func TestLoadConfigDNSResolvers(t *testing.T) {
 	os.Setenv("CONFIG_PATH", configPath)
 	defer os.Unsetenv("CONFIG_PATH")
 
-	cfg := Load()
+	cfg := MustLoad()
 	expected := []string{"1.1.1.1:53", "8.8.8.8:53"}
 	if !reflect.DeepEqual(cfg.DNSResolvers, expected) {
 		t.Errorf("Expected DNSResolvers %v, got %v", expected, cfg.DNSResolvers)
@@ -328,7 +327,7 @@ func TestLoadConfigDNSResolvers(t *testing.T) {
 	// Env override test
 	os.Setenv("DNS_RESOLVERS", "9.9.9.9:53,4.2.2.2:53")
 	defer os.Unsetenv("DNS_RESOLVERS")
-	cfgOverride := Load()
+	cfgOverride := MustLoad()
 	expectedOverride := []string{"9.9.9.9:53", "4.2.2.2:53"}
 	if !reflect.DeepEqual(cfgOverride.DNSResolvers, expectedOverride) {
 		t.Errorf("Expected DNSResolvers %v, got %v", expectedOverride, cfgOverride.DNSResolvers)
@@ -386,7 +385,7 @@ func TestSaveConfig(t *testing.T) {
 	os.Setenv("CONFIG_PATH", savePath)
 	defer os.Unsetenv("CONFIG_PATH")
 
-	loadedCfg := Load()
+	loadedCfg := MustLoad()
 
 	if loadedCfg.Port != cfg.Port {
 		t.Errorf("Expected Port %q, got %q", cfg.Port, loadedCfg.Port)
@@ -405,27 +404,22 @@ func TestSaveConfig(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_MissingStaticID_Exit(t *testing.T) {
-	if os.Getenv("BE_CRASHER") == "1" {
-		configJSON := `{
-			"certificates": [
-				{
-					"primary": "missing-id.com"
-				}
-			]
-		}`
-		configPath := createTempConfig(t, configJSON)
-		os.Setenv("CONFIG_PATH", configPath)
-		Load()
-		return
+func TestLoadConfig_MissingStaticID_Error(t *testing.T) {
+	configJSON := `{
+		"certificates": [
+			{
+				"primary": "missing-id.com"
+			}
+		]
+	}`
+	configPath := createTempConfig(t, configJSON)
+	os.Setenv("CONFIG_PATH", configPath)
+	defer os.Unsetenv("CONFIG_PATH")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Expected error when certificate is missing ID, but got nil")
 	}
-	cmd := exec.Command(os.Args[0], "-test.run=TestLoadConfig_MissingStaticID_Exit")
-	cmd.Env = append(os.Environ(), "BE_CRASHER=1")
-	err := cmd.Run()
-	if e, ok := err.(*exec.ExitError); ok && !e.Success() {
-		return
-	}
-	t.Fatalf("process ran with err %v, want exit status 1", err)
 }
 
 func TestLoadConfig_StaticDynamicSplit(t *testing.T) {
@@ -490,7 +484,7 @@ func TestLoadConfig_StaticDynamicSplit(t *testing.T) {
 		t.Fatalf("failed to write state.json: %v", err)
 	}
 
-	cfg := Load()
+	cfg := MustLoad()
 
 	// Assert merging on AllCertificates
 	allCerts := cfg.AllCertificates()
@@ -542,7 +536,7 @@ func TestLoadConfig_StaticDynamicSplit(t *testing.T) {
 	}
 
 	// Reload configuration and check that new dynamic cert is loaded
-	cfg2 := Load()
+	cfg2 := MustLoad()
 	if len(cfg2.State.Certificates) != 3 {
 		t.Errorf("expected 3 dynamic certificates after reload, got %d", len(cfg2.State.Certificates))
 	}
@@ -558,7 +552,7 @@ func TestLoadConfig_SSL(t *testing.T) {
 		os.Setenv("CONFIG_PATH", configPath)
 		defer os.Unsetenv("CONFIG_PATH")
 
-		cfg := Load()
+		cfg := MustLoad()
 		if cfg.SSLCertID != "019035a1-7b00-7521-8280-60b6adbf47eb" {
 			t.Errorf("Expected SSLCertID '019035a1-7b00-7521-8280-60b6adbf47eb', got %q", cfg.SSLCertID)
 		}
@@ -577,7 +571,7 @@ func TestLoadConfig_SSL(t *testing.T) {
 		os.Setenv("CONFIG_PATH", configPath)
 		defer os.Unsetenv("CONFIG_PATH")
 
-		cfg := Load()
+		cfg := MustLoad()
 		if cfg.HTTPSPort != "9443" {
 			t.Errorf("Expected HTTPSPort '9443', got %q", cfg.HTTPSPort)
 		}
@@ -599,7 +593,7 @@ func TestLoadConfig_SSL(t *testing.T) {
 			os.Unsetenv("SSL_CERT_ID")
 		}()
 
-		cfg := Load()
+		cfg := MustLoad()
 		if cfg.HTTPSPort != "9999" {
 			t.Errorf("Expected HTTPSPort '9999' from env override, got %q", cfg.HTTPSPort)
 		}
@@ -629,7 +623,7 @@ func TestLoadConfig_CertificateDNSProvider(t *testing.T) {
 	os.Setenv("CONFIG_PATH", configPath)
 	defer os.Unsetenv("CONFIG_PATH")
 
-	cfg := Load()
+	cfg := MustLoad()
 
 	if len(cfg.Certificates) != 2 {
 		t.Fatalf("expected 2 certificates, got %d", len(cfg.Certificates))

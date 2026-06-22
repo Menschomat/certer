@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -101,7 +102,7 @@ func (c *Config) AllTeams() []TeamConfig {
 }
 
 // Load loads configuration from environment variables with defaults.
-func Load() *Config {
+func Load() (*Config, error) {
 	cfg := &Config{
 		Port:               "8080",
 		Env:                "development",
@@ -135,31 +136,12 @@ func Load() *Config {
 	}
 
 	// Validate static configuration items have explicit ID field on boot
-	for _, cc := range cfg.Certificates {
-		if cc.ID == "" {
-			slog.Error("Static configuration error: certificate missing id")
-			os.Exit(1)
-		}
-	}
-	for _, k := range cfg.APIKeys {
-		if k.ID == "" {
-			slog.Error("Static configuration error: api key missing id")
-			os.Exit(1)
-		}
-	}
-	for _, t := range cfg.Teams {
-		if t.ID == "" {
-			slog.Error("Static configuration error: team missing id")
-			os.Exit(1)
-		}
+	if err := cfg.validateStaticIDs(); err != nil {
+		return nil, err
 	}
 
 	// Coerce static certificate team IDs to "system" if empty
-	for i := range cfg.Certificates {
-		if cfg.Certificates[i].TeamID == "" {
-			cfg.Certificates[i].TeamID = "system"
-		}
-	}
+	cfg.coerceStaticTeamIDs()
 
 	// Load dynamic state
 	statePath := os.Getenv("STATE_PATH")
@@ -195,7 +177,44 @@ func Load() *Config {
 		}
 	}
 
+	return cfg, nil
+}
+
+// MustLoad loads configuration and exits the process on failure.
+func MustLoad() *Config {
+	cfg, err := Load()
+	if err != nil {
+		slog.Error("Failed to load configuration", "error", err)
+		os.Exit(1)
+	}
 	return cfg
+}
+
+func (cfg *Config) validateStaticIDs() error {
+	for _, cc := range cfg.Certificates {
+		if cc.ID == "" {
+			return fmt.Errorf("static configuration error: certificate missing id")
+		}
+	}
+	for _, k := range cfg.APIKeys {
+		if k.ID == "" {
+			return fmt.Errorf("static configuration error: api key missing id")
+		}
+	}
+	for _, t := range cfg.Teams {
+		if t.ID == "" {
+			return fmt.Errorf("static configuration error: team missing id")
+		}
+	}
+	return nil
+}
+
+func (cfg *Config) coerceStaticTeamIDs() {
+	for i := range cfg.Certificates {
+		if cfg.Certificates[i].TeamID == "" {
+			cfg.Certificates[i].TeamID = "system"
+		}
+	}
 }
 
 func mergeString(dst *string, src string) {
