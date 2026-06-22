@@ -12,6 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     if: github.server_url != 'https://github.com'
     steps:
+      - name: Cleanup Disk Space
+        run: |
+          docker system prune -f || true
+          docker image prune -f || true
+          df -h
+          
       - name: Checkout Code
         uses: actions/checkout@v6
 
@@ -27,9 +33,6 @@ jobs:
       - name: Run Tests
         run: go test -race -v ./...
 
-      - name: Build Binaries
-        run: make build
-
       - name: Import Secrets from Vault
         id: import-secrets
         uses: hashicorp/vault-action@v4
@@ -42,12 +45,6 @@ jobs:
           secrets: |
             certer/secret/data/cicd/registry username | REGISTRY_USERNAME ;
             certer/secret/data/cicd/registry password | REGISTRY_PASSWORD
-
-      - name: Cleanup Disk Space
-        run: |
-          docker system prune -f || true
-          docker image prune -f || true
-          df -h
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

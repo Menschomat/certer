@@ -30,9 +30,6 @@ jobs:
       - name: Run Tests
         run: go test -race -v ./...
 
-      - name: Build Binaries
-        run: make build
-
       - name: Lowercase Repository Name
         run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
