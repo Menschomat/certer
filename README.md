@@ -301,6 +301,25 @@ docker run --rm -it --entrypoint /keygen certer
 docker run --rm -it --entrypoint /keygen certer -token mysecret
 ```
 
+---
+
+## Audit Report Utility (CLI)
+Generate an operational report from the Certer API using the built-in audit CLI. The HTML report uses the metadata-only certificate status endpoint, so it does not download certificate PEM bodies or private keys.
+
+```bash
+AUDIT_TOKEN=your-admin-token /audit -url http://localhost:8080 -format html -output certer-report.html
+```
+
+Supported formats are:
+- `text`: Markdown report printed to stdout
+- `json`: Raw audit data as formatted JSON
+- `html`: Standalone static dashboard with embedded CSS
+
+The same options can be provided with environment variables:
+- `AUDIT_TOKEN`
+- `AUDIT_URL`
+- `AUDIT_FORMAT`
+- `AUDIT_OUTPUT`
 
 ---
 
