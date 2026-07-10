@@ -4,43 +4,125 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Certer System Report</title>
+  <script>
+    (() => {
+      try {
+        const theme = localStorage.getItem("certer-audit-theme");
+        if (theme === "dark" || theme === "light") {
+          document.documentElement.dataset.theme = theme;
+        }
+      } catch (_) {}
+    })();
+  </script>
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f6f8fb;
-      --panel: #ffffff;
-      --ink: #172033;
-      --muted: #667085;
-      --line: #d9e0ea;
-      --header-bg: #f9fbfd;
+      color-scheme: light dark;
+      --bg: #EAECF0;
+      --surface: #f8f9fb;
+      --ink: #000000;
+      --muted: #233D4D;
+      --line: rgb(35 61 77 / 22%);
+      --accent: #FE7F2D;
+      --accent-strong: #233D4D;
+      --glass-bg: rgb(234 236 240 / 74%);
+      --glass-bg-strong: rgb(234 236 240 / 92%);
+      --glass-border: rgb(35 61 77 / 26%);
+      --glass-highlight: rgb(255 255 255 / 70%);
+      --glass-shadow: 0 16px 38px rgb(35 61 77 / 12%);
+      --glass-blur: 18px;
+      --dot-color: rgb(35 61 77 / 12%);
+      --dot-glow: rgb(254 127 45 / 10%);
       --ok: #0f766e;
-      --ok-bg: #dff7ef;
+      --ok-bg: rgb(15 118 110 / 14%);
       --warning: #a15c07;
-      --warning-bg: #fff2cc;
+      --warning-bg: rgb(254 127 45 / 16%);
       --critical: #b42318;
-      --critical-bg: #ffe4e0;
+      --critical-bg: rgb(180 35 24 / 12%);
     }
     @media (prefers-color-scheme: dark) {
       :root {
         color-scheme: dark;
-        --bg: #111827;
-        --panel: #1f2937;
-        --ink: #f3f4f6;
-        --muted: #aeb8c7;
-        --line: #374151;
-        --header-bg: #273244;
+        --bg: #000000;
+        --surface: #0c1115;
+        --ink: #EAECF0;
+        --muted: rgb(234 236 240 / 72%);
+        --line: rgb(234 236 240 / 16%);
+        --accent: #FE7F2D;
+        --accent-strong: #FE7F2D;
+        --glass-bg: rgb(35 61 77 / 40%);
+        --glass-bg-strong: rgb(12 17 21 / 82%);
+        --glass-border: rgb(234 236 240 / 18%);
+        --glass-highlight: rgb(234 236 240 / 10%);
+        --glass-shadow: 0 18px 45px rgb(0 0 0 / 24%);
+        --dot-color: rgb(234 236 240 / 12%);
+        --dot-glow: rgb(254 127 45 / 8%);
         --ok: #7ee2c5;
-        --ok-bg: #164e4a;
+        --ok-bg: rgb(126 226 197 / 12%);
         --warning: #f6c76a;
-        --warning-bg: #5b4318;
+        --warning-bg: rgb(254 127 45 / 16%);
         --critical: #ff9e96;
-        --critical-bg: #5b2525;
+        --critical-bg: rgb(255 158 150 / 14%);
       }
     }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #EAECF0;
+      --surface: #f8f9fb;
+      --ink: #000000;
+      --muted: #233D4D;
+      --line: rgb(35 61 77 / 22%);
+      --accent: #FE7F2D;
+      --accent-strong: #233D4D;
+      --glass-bg: rgb(234 236 240 / 74%);
+      --glass-bg-strong: rgb(234 236 240 / 92%);
+      --glass-border: rgb(35 61 77 / 26%);
+      --glass-highlight: rgb(255 255 255 / 70%);
+      --glass-shadow: 0 16px 38px rgb(35 61 77 / 12%);
+      --dot-color: rgb(35 61 77 / 12%);
+      --dot-glow: rgb(254 127 45 / 10%);
+      --ok: #0f766e;
+      --ok-bg: rgb(15 118 110 / 14%);
+      --warning: #a15c07;
+      --warning-bg: rgb(254 127 45 / 16%);
+      --critical: #b42318;
+      --critical-bg: rgb(180 35 24 / 12%);
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #000000;
+      --surface: #0c1115;
+      --ink: #EAECF0;
+      --muted: rgb(234 236 240 / 72%);
+      --line: rgb(234 236 240 / 16%);
+      --accent: #FE7F2D;
+      --accent-strong: #FE7F2D;
+      --glass-bg: rgb(35 61 77 / 40%);
+      --glass-bg-strong: rgb(12 17 21 / 82%);
+      --glass-border: rgb(234 236 240 / 18%);
+      --glass-highlight: rgb(234 236 240 / 10%);
+      --glass-shadow: 0 18px 45px rgb(0 0 0 / 24%);
+      --dot-color: rgb(234 236 240 / 12%);
+      --dot-glow: rgb(254 127 45 / 8%);
+      --ok: #7ee2c5;
+      --ok-bg: rgb(126 226 197 / 12%);
+      --warning: #f6c76a;
+      --warning-bg: rgb(254 127 45 / 16%);
+      --critical: #ff9e96;
+      --critical-bg: rgb(255 158 150 / 14%);
+    }
     * { box-sizing: border-box; }
+    html { min-width: 320px; }
     body {
       margin: 0;
-      background: var(--bg);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% 12%, var(--dot-glow), transparent 28%),
+        radial-gradient(circle at 82% 18%, var(--dot-glow), transparent 24%),
+        radial-gradient(circle, var(--dot-color) 1px, transparent 1.5px),
+        var(--bg);
+      background-attachment: fixed, fixed, fixed, scroll;
+      background-position: center, center, 0 0, center;
+      background-size: auto, auto, 22px 22px, auto;
       color: var(--ink);
       font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.45;
@@ -48,10 +130,30 @@
     main {
       width: min(1320px, calc(100% - 32px));
       margin: 0 auto;
-      padding: 32px 0 48px;
+      padding: 34px 0 48px;
     }
     header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: start;
       margin-bottom: 24px;
+    }
+    .title-row {
+      min-width: 0;
+    }
+    .title-line {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 13px;
+    }
+    .report-logo {
+      display: block;
+      width: 56px;
+      height: 56px;
+      flex: 0 0 auto;
+      filter: drop-shadow(0 14px 24px rgb(0 0 0 / 18%));
     }
     h1 {
       margin: 0;
@@ -66,8 +168,55 @@
     }
     .meta {
       margin-top: 8px;
+      margin-left: 69px;
       color: var(--muted);
       font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      justify-self: end;
+      align-self: start;
+    }
+    .theme-toggle {
+      position: relative;
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 0;
+      background: var(--glass-bg);
+      box-shadow: inset 0 1px 0 var(--glass-highlight);
+      color: var(--ink);
+      cursor: pointer;
+      backdrop-filter: blur(14px) saturate(130%);
+      -webkit-backdrop-filter: blur(14px) saturate(130%);
+    }
+    .theme-toggle:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .theme-toggle:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .theme-icon {
+      display: none;
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.8;
+    }
+    .theme-toggle[data-theme-toggle="auto"] .theme-icon-auto,
+    .theme-toggle[data-theme-toggle="dark"] .theme-icon-dark,
+    .theme-toggle[data-theme-toggle="light"] .theme-icon-light {
+      display: block;
     }
     .summary {
       display: grid;
@@ -76,9 +225,12 @@
       margin-bottom: 24px;
     }
     .metric, section {
-      background: var(--panel);
-      border: 1px solid var(--line);
+      border: 1px solid var(--glass-border);
       border-radius: 8px;
+      background: var(--glass-bg);
+      box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+      backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
     }
     .metric {
       padding: 14px 16px;
@@ -87,19 +239,24 @@
       color: var(--muted);
       font-size: 12px;
       text-transform: uppercase;
-      letter-spacing: .04em;
+      letter-spacing: 0;
     }
     .metric .value {
       margin-top: 6px;
       font-size: 28px;
       font-weight: 700;
+      color: var(--ink);
     }
+    .metric.is-warning .value { color: var(--warning); }
+    .metric.is-critical .value { color: var(--critical); }
+    .metric.is-ok .value { color: var(--ok); }
     section {
       margin-top: 16px;
       overflow: hidden;
     }
     .section-head {
       padding: 18px 20px 10px;
+      background: linear-gradient(180deg, var(--glass-bg-strong), transparent);
     }
     .table-wrap {
       overflow-x: auto;
@@ -123,8 +280,8 @@
       color: var(--muted);
       font-size: 12px;
       text-transform: uppercase;
-      letter-spacing: .04em;
-      background: var(--header-bg);
+      letter-spacing: 0;
+      background: var(--glass-bg-strong);
     }
     td.wrap {
       white-space: normal;
@@ -147,10 +304,12 @@
       font-size: 12px;
       white-space: normal;
       overflow-wrap: anywhere;
+      color: var(--accent-strong);
     }
     .status {
       display: inline-block;
       min-width: 72px;
+      border: 1px solid currentColor;
       border-radius: 999px;
       padding: 3px 9px;
       font-size: 12px;
@@ -170,10 +329,31 @@
         width: min(100% - 24px, 680px);
         padding-top: 24px;
       }
+      header {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .title-row {
+        padding-right: 46px;
+      }
+      .title-line {
+        gap: 10px;
+      }
+      .report-logo {
+        width: 48px;
+        height: 48px;
+      }
+      .header-actions {
+        position: absolute;
+        top: 0;
+        right: 0;
+      }
+      header { position: relative; }
       h1 {
         font-size: 28px;
       }
       .meta {
+        margin-left: 58px;
         font-size: 13px;
         overflow-wrap: anywhere;
       }
@@ -220,7 +400,7 @@
         color: var(--muted);
         font-size: 11px;
         font-weight: 700;
-        letter-spacing: .04em;
+        letter-spacing: 0;
         text-transform: uppercase;
       }
       td.wrap,
@@ -230,7 +410,16 @@
     }
     @media (max-width: 430px) {
       td {
-        grid-template-columns: 116px minmax(0, 1fr);
+        grid-template-columns: 104px minmax(0, 1fr);
+        gap: 10px;
+      }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .metric { padding: 9px 10px; }
+      .metric .value { font-size: 21px; }
+    }
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+      .metric, section, .theme-toggle {
+        background: var(--glass-bg-strong);
       }
     }
   </style>
@@ -238,15 +427,80 @@
 <body>
   <main>
     <header>
-      <h1>Certer System Report</h1>
-      <div class="meta">Target: {{.TargetURL}} &middot; Generated: {{.GeneratedAt}}</div>
+      <div class="title-row">
+        <div class="title-line">
+        <svg class="report-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="logo-title logo-desc">
+          <title id="logo-title">Certer logo</title>
+          <desc id="logo-desc">A certificate mark with a verification seal.</desc>
+          <defs>
+            <linearGradient id="logo-badge" x1="50" y1="28" x2="188" y2="216" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#416B82"/>
+              <stop offset=".56" stop-color="#233D4D"/>
+              <stop offset="1" stop-color="#152A36"/>
+            </linearGradient>
+            <linearGradient id="logo-sheen" x1="120" y1="26" x2="120" y2="132" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#FFF" stop-opacity=".2"/>
+              <stop offset="1" stop-color="#FFF" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="logo-paper" x1="102" y1="60" x2="150" y2="196" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#FFF"/>
+              <stop offset="1" stop-color="#D9E0E5"/>
+            </linearGradient>
+            <radialGradient id="logo-seal" cx=".32" cy=".2" r=".9">
+              <stop stop-color="#FFB175"/>
+              <stop offset=".58" stop-color="#FE7F2D"/>
+              <stop offset="1" stop-color="#D95D19"/>
+            </radialGradient>
+            <clipPath id="logo-badge-clip">
+              <rect x="24" y="24" width="192" height="192" rx="48"/>
+            </clipPath>
+          </defs>
+          <rect x="24" y="24" width="192" height="192" rx="48" fill="url(#logo-badge)"/>
+          <rect x="24" y="24" width="192" height="192" rx="48" fill="url(#logo-sheen)" clip-path="url(#logo-badge-clip)"/>
+          <rect x="25.5" y="25.5" width="189" height="189" rx="46.5" fill="none" stroke="#EAECF0" stroke-opacity=".22" stroke-width="3"/>
+          <path d="M84 64h58l30 30v82a16 16 0 0 1-16 16H84a16 16 0 0 1-16-16V80a16 16 0 0 1 16-16Z" transform="translate(0 6)" fill="#000" opacity=".2"/>
+          <path d="M84 64h58l30 30v82a16 16 0 0 1-16 16H84a16 16 0 0 1-16-16V80a16 16 0 0 1 16-16Z" fill="url(#logo-paper)"/>
+          <path d="M142 64v30h30" fill="none" stroke="#FE7F2D" stroke-width="10" stroke-linejoin="round"/>
+          <path d="M93 112h54M93 132h38" fill="none" stroke="#233D4D" stroke-width="9" stroke-linecap="round"/>
+          <circle cx="145" cy="160" r="27" fill="url(#logo-seal)"/>
+          <path d="M132 149a19 19 0 0 1 21-5" fill="none" stroke="#FFF" stroke-opacity=".28" stroke-width="4" stroke-linecap="round"/>
+          <path d="m132 160 9 9 18-20" fill="none" stroke="#000000" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+          <h1>Certer System Report</h1>
+        </div>
+        <div class="meta">Target: {{.TargetURL}} &middot; Generated: {{.GeneratedAt}}</div>
+      </div>
+      <div class="header-actions">
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Theme: auto" title="Theme: auto">
+          <svg class="theme-icon theme-icon-auto" aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M5 5.5A2.5 2.5 0 0 1 7.5 3h9A2.5 2.5 0 0 1 19 5.5V14H5V5.5Z"/>
+            <path d="M3 18h18"/>
+            <path d="M8.5 18 10 14"/>
+            <path d="M15.5 18 14 14"/>
+          </svg>
+          <svg class="theme-icon theme-icon-dark" aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M20 14.3A7.6 7.6 0 0 1 9.7 4a8.4 8.4 0 1 0 10.3 10.3Z"/>
+          </svg>
+          <svg class="theme-icon theme-icon-light" aria-hidden="true" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2"/>
+            <path d="M12 20v2"/>
+            <path d="m4.9 4.9 1.4 1.4"/>
+            <path d="m17.7 17.7 1.4 1.4"/>
+            <path d="M2 12h2"/>
+            <path d="M20 12h2"/>
+            <path d="m4.9 19.1 1.4-1.4"/>
+            <path d="m17.7 6.3 1.4-1.4"/>
+          </svg>
+        </button>
+      </div>
     </header>
 
     <div class="summary" aria-label="Summary">
       <div class="metric"><div class="label">Total Certificates</div><div class="value">{{.Summary.TotalCertificates}}</div></div>
-      <div class="metric"><div class="label">OK</div><div class="value">{{.Summary.OK}}</div></div>
-      <div class="metric"><div class="label">Warning</div><div class="value">{{.Summary.Warning}}</div></div>
-      <div class="metric"><div class="label">Critical</div><div class="value">{{.Summary.Critical}}</div></div>
+      <div class="metric is-ok"><div class="label">OK</div><div class="value">{{.Summary.OK}}</div></div>
+      <div class="metric is-warning"><div class="label">Warning</div><div class="value">{{.Summary.Warning}}</div></div>
+      <div class="metric is-critical"><div class="label">Critical</div><div class="value">{{.Summary.Critical}}</div></div>
       <div class="metric"><div class="label">Unissued</div><div class="value">{{.Summary.Unissued}}</div></div>
       <div class="metric"><div class="label">Teams</div><div class="value">{{.Summary.Teams}}</div></div>
       <div class="metric"><div class="label">API Keys</div><div class="value">{{.Summary.APIKeys}}</div></div>
@@ -335,5 +589,45 @@
 
     <footer>Static report generated by certer audit.</footer>
   </main>
+  <script>
+    (() => {
+      const colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
+      const themeToggle = document.querySelector("[data-theme-toggle]");
+      const themes = ["auto", "dark", "light"];
+      const themeLabel = (theme) => `Theme: ${theme === "light" ? "lite" : theme}`;
+      const storedTheme = () => {
+        try {
+          return localStorage.getItem("certer-audit-theme") || "auto";
+        } catch (_) {
+          return "auto";
+        }
+      };
+      const applyTheme = (theme) => {
+        if (theme === "dark" || theme === "light") {
+          document.documentElement.dataset.theme = theme;
+        } else {
+          delete document.documentElement.dataset.theme;
+          theme = "auto";
+        }
+        try {
+          theme === "auto" ? localStorage.removeItem("certer-audit-theme") : localStorage.setItem("certer-audit-theme", theme);
+        } catch (_) {}
+        if (themeToggle) {
+          themeToggle.dataset.themeToggle = theme;
+          themeToggle.setAttribute("aria-label", themeLabel(theme));
+          themeToggle.title = themeLabel(theme);
+        }
+      };
+
+      applyTheme(storedTheme());
+      themeToggle?.addEventListener("click", () => {
+        const current = themeToggle.dataset.themeToggle || storedTheme();
+        applyTheme(themes[(themes.indexOf(current) + 1) % themes.length]);
+      });
+      colorScheme.addEventListener("change", () => {
+        if (storedTheme() === "auto") applyTheme("auto");
+      });
+    })();
+  </script>
 </body>
 </html>
