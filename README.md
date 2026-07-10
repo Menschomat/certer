@@ -319,7 +319,7 @@ go run ./cmd/audit -sample -format html -output /tmp/certer-report.html
 Supported formats are:
 - `text`: Markdown report printed to stdout
 - `json`: Raw audit data as formatted JSON
-- `html`: Standalone static dashboard with embedded CSS
+- `html`: Standalone static dashboard with embedded CSS; follows the viewer's light or dark system theme
 
 The HTML source template lives at `cmd/audit/templates/report.html` and is embedded into the audit binary at build time.
 
@@ -329,6 +329,8 @@ The same options can be provided with environment variables:
 - `AUDIT_FORMAT`
 - `AUDIT_OUTPUT`
 - `AUDIT_SAMPLE`
+
+When `-output` or `AUDIT_OUTPUT` is set, the complete report is written to that path and is not printed to stdout. Without an output path, the selected report is printed to stdout.
 
 ---
 
