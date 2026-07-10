@@ -53,8 +53,10 @@ func (s *Server) Routes() http.Handler {
 
 		// Scoped Certificates API
 		{"GET /api/v1/certificates", s.Authenticate(http.HandlerFunc(s.handleGetCertificates))},
+		{"GET /api/v1/certificates/status", s.Authenticate(http.HandlerFunc(s.handleGetCertificateStatuses))},
 		{"GET /api/v1/certificates/{identifier}/certificate", s.Authenticate(http.HandlerFunc(s.handleGetCertificateRaw))},
 		{"GET /api/v1/certificates/{identifier}/private-key", s.Authenticate(http.HandlerFunc(s.handleGetPrivateKeyRaw))},
+		{"GET /api/v1/certificates/{identifier}/status", s.Authenticate(http.HandlerFunc(s.handleGetCertificateStatus))},
 
 		// Control plane APIs (Certificates)
 		{"GET /api/v1/config/certificates", s.Authenticate(http.HandlerFunc(s.handleGetConfigCertificates))},
@@ -141,9 +143,10 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 
 		isConfigPath := strings.HasPrefix(r.URL.Path, configPathPrefix)
 		isCertRetrieval := r.Method == "GET" && r.URL.Path == "/api/v1/certificates"
+		isCertStatus := r.Method == "GET" && isCertificateStatusPath(r.URL.Path)
 
 		if matchedKey.Admin {
-			if !isConfigPath && !isCertRetrieval {
+			if !isConfigPath && !isCertRetrieval && !isCertStatus {
 				slog.Warn("Forbidden access attempt: admin token tried to access restricted route", "remote_addr", r.RemoteAddr, "path", r.URL.Path)
 				respondWithError(w, http.StatusForbidden, "admin tokens are restricted to config APIs and certificate retrieval only")
 				return
@@ -170,6 +173,17 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, isAdminKey, matchedKey.Admin)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func isCertificateStatusPath(path string) bool {
+	if path == "/api/v1/certificates/status" {
+		return true
+	}
+	if !strings.HasPrefix(path, "/api/v1/certificates/") || !strings.HasSuffix(path, "/status") {
+		return false
+	}
+	identifier := strings.TrimSuffix(strings.TrimPrefix(path, "/api/v1/certificates/"), "/status")
+	return identifier != "" && !strings.Contains(identifier, "/")
 }
 
 func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {

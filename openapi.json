@@ -73,6 +73,76 @@
           }
         }
       },
+      "CertificateStatusResponse": {
+        "type": "object",
+        "description": "Certificate health metadata without PEM certificate or private key material.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "018f6a9e-1234-789a-bcde-f0123456789a"
+          },
+          "domain": {
+            "type": "string",
+            "example": "example.com"
+          },
+          "sans": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["*.example.com", "www.example.com"]
+          },
+          "issued": {
+            "type": "boolean",
+            "description": "True only when both public certificate and private key files are present.",
+            "example": true
+          },
+          "cert_filename": {
+            "type": "string",
+            "example": "example.com.crt"
+          },
+          "key_filename": {
+            "type": "string",
+            "example": "example.com.key"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["ok", "warning", "critical"],
+            "example": "ok"
+          },
+          "reason": {
+            "type": "string",
+            "example": "certificate is expiring soon"
+          },
+          "issued_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00Z"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-01T00:00:00Z"
+          },
+          "days_remaining": {
+            "type": "integer",
+            "example": 72
+          },
+          "is_valid": {
+            "type": "boolean",
+            "example": true
+          },
+          "issuer_common_name": {
+            "type": "string",
+            "example": "R3"
+          },
+          "serial_number": {
+            "type": "string",
+            "example": "5f2b8c..."
+          }
+        }
+      },
       "CertConfig": {
         "type": "object",
         "required": [
@@ -303,6 +373,106 @@
           },
           "403": {
             "description": "Forbidden attempt to fetch certificates with an admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/certificates/status": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Certificate Statuses",
+        "description": "Retrieve certificate health and x509 metadata without returning PEM certificate bodies or private keys.",
+        "responses": {
+          "200": {
+            "description": "A list of certificate status records permitted for the token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CertificateStatusResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized access due to missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/certificates/{identifier}/status": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Certificate Status",
+        "description": "Retrieve health and x509 metadata for one certificate without returning PEM certificate bodies or private keys.",
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "description": "Certificate ID (UUID) or domain name (primary or SAN)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Certificate status metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized access due to missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden access due to scoped token restrictions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Certificate configuration not found",
             "content": {
               "application/json": {
                 "schema": {

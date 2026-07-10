@@ -377,6 +377,28 @@ Directly download the raw PEM encoded block as plain text (no JSON).
   -----END CERTIFICATE-----
   ```
 
+#### 3.2 Fetch Certificate Status Without PEM Material
+Retrieve certificate health and x509 metadata without downloading certificate bodies or private keys.
+- **Endpoints**:
+  - `GET /api/v1/certificates/status`
+  - `GET /api/v1/certificates/{identifier}/status`
+- **Auth**: Bearer Token (Fetch Token, `admin = false`, or Admin Token)
+- **Response**:
+  ```json
+  {
+    "id": "019035a1-7b00-7521-8280-60b6adbf47eb",
+    "domain": "example.com",
+    "sans": ["*.example.com"],
+    "issued": true,
+    "status": "ok",
+    "issued_at": "2026-01-01T00:00:00Z",
+    "expires_at": "2026-04-01T00:00:00Z",
+    "days_remaining": 72,
+    "is_valid": true,
+    "issuer_common_name": "R3"
+  }
+  ```
+
 ---
 
 ### 4. Configuration: Certificates (Admin APIs)

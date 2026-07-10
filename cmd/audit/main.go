@@ -16,10 +16,10 @@ import (
 )
 
 type AuditData struct {
-	Teams        []config.TeamConfig          `json:"teams"`
-	CertConfigs  []config.CertConfig          `json:"cert_configs"`
-	APIKeys      []config.APIKeyConfig        `json:"api_keys"`
-	IssuedCerts  []api.CertificateResponse    `json:"issued_certs"`
+	Teams       []config.TeamConfig             `json:"teams"`
+	CertConfigs []config.CertConfig             `json:"cert_configs"`
+	APIKeys     []config.APIKeyConfig           `json:"api_keys"`
+	IssuedCerts []api.CertificateStatusResponse `json:"issued_certs"`
 }
 
 func main() {
@@ -96,9 +96,9 @@ func fetchAuditData(ctx context.Context, client *http.Client, baseURL, token str
 		return nil, fmt.Errorf("failed to fetch API keys configuration: %w", err)
 	}
 
-	err = fetchEndpoint(ctx, client, baseURL+"/api/v1/certificates", token, &data.IssuedCerts)
+	err = fetchEndpoint(ctx, client, baseURL+"/api/v1/certificates/status", token, &data.IssuedCerts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch issued certificates data: %w", err)
+		return nil, fmt.Errorf("failed to fetch certificate status data: %w", err)
 	}
 
 	return data, nil
@@ -196,4 +196,3 @@ func normalizeURL(url string) string {
 	}
 	return strings.TrimSuffix(url, "/")
 }
-

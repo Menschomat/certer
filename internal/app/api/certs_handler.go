@@ -1,13 +1,18 @@
 package api
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"certer/internal/app/config"
 )
+
+const certificateStatusWarningDays = 30
 
 // CertificateResponse represents the JSON schema for sharing certificates.
 type CertificateResponse struct {
@@ -19,6 +24,24 @@ type CertificateResponse struct {
 	PrivateKey   string   `json:"private_key,omitempty"`
 	CertFilename string   `json:"cert_filename,omitempty"`
 	KeyFilename  string   `json:"key_filename,omitempty"`
+}
+
+// CertificateStatusResponse reports certificate health without returning PEM material.
+type CertificateStatusResponse struct {
+	ID               string   `json:"id"`
+	Domain           string   `json:"domain"`
+	Sans             []string `json:"sans"`
+	Issued           bool     `json:"issued"`
+	CertFilename     string   `json:"cert_filename,omitempty"`
+	KeyFilename      string   `json:"key_filename,omitempty"`
+	Status           string   `json:"status"`
+	Reason           string   `json:"reason,omitempty"`
+	IssuedAt         string   `json:"issued_at,omitempty"`
+	ExpiresAt        string   `json:"expires_at,omitempty"`
+	DaysRemaining    *int     `json:"days_remaining,omitempty"`
+	IsValid          bool     `json:"is_valid"`
+	IssuerCommonName string   `json:"issuer_common_name,omitempty"`
+	SerialNumber     string   `json:"serial_number,omitempty"`
 }
 
 func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +91,137 @@ func (s *Server) handleGetCertificates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, respList)
+}
+
+func (s *Server) handleGetCertificateStatuses(w http.ResponseWriter, r *http.Request) {
+	respList := []CertificateStatusResponse{}
+	for _, cc := range s.accessibleCertificates(r) {
+		if cc.Primary == "" {
+			continue
+		}
+		respList = append(respList, s.buildCertificateStatus(cc))
+	}
+
+	respondWithJSON(w, http.StatusOK, respList)
+}
+
+func (s *Server) handleGetCertificateStatus(w http.ResponseWriter, r *http.Request) {
+	identifier := r.PathValue("identifier")
+	if identifier == "" {
+		respondWithError(w, http.StatusBadRequest, "missing identifier")
+		return
+	}
+
+	s.mu.RLock()
+	allCerts := s.cfg.AllCertificates()
+	s.mu.RUnlock()
+
+	cc := s.findCertificateByIdentifier(identifier, allCerts)
+	if cc == nil {
+		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
+		return
+	}
+
+	allowedCertificates := allowedCertificatesFromContext(r.Context())
+	allowedTeams := allowedTeamsFromContext(r.Context())
+	isAdmin := isAdminFromContext(r.Context())
+	if allowed, msg := checkCertAccess(isAdmin, cc.ID, cc.TeamID, allowedCertificates, allowedTeams); !allowed {
+		respondWithError(w, http.StatusForbidden, msg)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, s.buildCertificateStatus(*cc))
+}
+
+func (s *Server) accessibleCertificates(r *http.Request) []config.CertConfig {
+	allowedCertificates := allowedCertificatesFromContext(r.Context())
+	allowedTeams := allowedTeamsFromContext(r.Context())
+	isAdmin := isAdminFromContext(r.Context())
+
+	s.mu.RLock()
+	allCerts := s.cfg.AllCertificates()
+	certs := make([]config.CertConfig, len(allCerts))
+	copy(certs, allCerts)
+	s.mu.RUnlock()
+
+	filtered := []config.CertConfig{}
+	for _, cc := range certs {
+		if allowed, _ := checkCertAccess(isAdmin, cc.ID, cc.TeamID, allowedCertificates, allowedTeams); allowed {
+			filtered = append(filtered, cc)
+		}
+	}
+	return filtered
+}
+
+func (s *Server) buildCertificateStatus(cc config.CertConfig) CertificateStatusResponse {
+	resp := CertificateStatusResponse{
+		ID:           cc.ID,
+		Domain:       cc.Primary,
+		Sans:         cc.Sans,
+		Issued:       false,
+		CertFilename: cc.Primary + ".crt",
+		KeyFilename:  cc.Primary + ".key",
+		Status:       "critical",
+	}
+
+	certPath := filepath.Join(s.storageDir, cc.ID+".crt")
+	keyPath := filepath.Join(s.storageDir, cc.ID+".key")
+
+	certBytes, err := os.ReadFile(certPath)
+	if err != nil {
+		resp.Reason = "certificate file missing or unreadable"
+		return resp
+	}
+
+	keyExists := true
+	if _, err := os.Stat(keyPath); err != nil {
+		keyExists = false
+		resp.Reason = "private key file missing or unreadable"
+	}
+
+	block, _ := pem.Decode(certBytes)
+	if block == nil {
+		resp.Reason = "failed to decode certificate PEM"
+		return resp
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		resp.Reason = "failed to parse certificate bytes"
+		return resp
+	}
+
+	now := time.Now()
+	daysRemaining := int(time.Until(cert.NotAfter).Hours() / 24)
+	resp.DaysRemaining = &daysRemaining
+	resp.IssuedAt = cert.NotBefore.Format(time.RFC3339)
+	resp.ExpiresAt = cert.NotAfter.Format(time.RFC3339)
+	resp.IsValid = now.After(cert.NotBefore) && now.Before(cert.NotAfter)
+	resp.IssuerCommonName = cert.Issuer.CommonName
+	resp.SerialNumber = cert.SerialNumber.Text(16)
+	resp.Issued = keyExists
+
+	if !keyExists {
+		return resp
+	}
+	if !resp.IsValid {
+		resp.Status = "critical"
+		if now.Before(cert.NotBefore) {
+			resp.Reason = "certificate is not valid yet"
+		} else {
+			resp.Reason = "certificate has expired"
+		}
+		return resp
+	}
+	if daysRemaining <= certificateStatusWarningDays {
+		resp.Status = "warning"
+		resp.Reason = "certificate is expiring soon"
+		return resp
+	}
+
+	resp.Status = "ok"
+	resp.Reason = ""
+	return resp
 }
 
 func (s *Server) handleGetConfigCertificates(w http.ResponseWriter, r *http.Request) {
@@ -312,5 +466,3 @@ func matchesWildcard(pattern, domain string) bool {
 	suffix := pattern[1:] // e.g. ".example.com"
 	return strings.HasSuffix(domain, suffix) && strings.Count(domain, ".") == strings.Count(pattern, ".")
 }
-
-

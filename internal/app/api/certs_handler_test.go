@@ -2,17 +2,83 @@ package api
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"certer/internal/app/config"
 )
+
+func createAPITestCertificate(t *testing.T, dir, id, domain string, sans []string, notBefore, notAfter time.Time, writeKey bool) {
+	t.Helper()
+
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Failed to generate private key: %v", err)
+	}
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		t.Fatalf("Failed to generate serial number: %v", err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber:          serialNumber,
+		Subject:               pkix.Name{CommonName: domain},
+		Issuer:                pkix.Name{CommonName: "Certer Test CA"},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              append([]string{domain}, sans...),
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		t.Fatalf("Failed to create certificate: %v", err)
+	}
+	certFile, err := os.Create(filepath.Join(dir, id+".crt"))
+	if err != nil {
+		t.Fatalf("Failed to create cert file: %v", err)
+	}
+	if err := pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}); err != nil {
+		t.Fatalf("Failed to encode cert: %v", err)
+	}
+	if err := certFile.Close(); err != nil {
+		t.Fatalf("Failed to close cert file: %v", err)
+	}
+
+	if !writeKey {
+		return
+	}
+	keyBytes, err := x509.MarshalECPrivateKey(privateKey)
+	if err != nil {
+		t.Fatalf("Failed to marshal private key: %v", err)
+	}
+	keyFile, err := os.Create(filepath.Join(dir, id+".key"))
+	if err != nil {
+		t.Fatalf("Failed to create key file: %v", err)
+	}
+	if err := pem.Encode(keyFile, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes}); err != nil {
+		t.Fatalf("Failed to encode key: %v", err)
+	}
+	if err := keyFile.Close(); err != nil {
+		t.Fatalf("Failed to close key file: %v", err)
+	}
+}
 
 func TestHandleGetCertificates_Authentication(t *testing.T) {
 	tmpDir, cleanup := setupTestEnv(t, "api-cert-tests-*")
@@ -781,6 +847,179 @@ func TestAdmin_FetchCertificates(t *testing.T) {
 	})
 }
 
+func TestCertificateStatusEndpoints(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t, "api-cert-status-tests-*")
+	defer cleanup()
+
+	hashedAdmin, err := GenerateArgon2idHash("admin-token")
+	if err != nil {
+		t.Fatalf("Failed to hash admin token: %v", err)
+	}
+	hashedUser, err := GenerateArgon2idHash("user-token")
+	if err != nil {
+		t.Fatalf("Failed to hash user token: %v", err)
+	}
+
+	initialConfig := &config.Config{
+		APIKeys: []config.APIKeyConfig{
+			{
+				ID:    "key-admin",
+				Token: hashedAdmin,
+				Admin: true,
+			},
+			{
+				ID:                  "key-user",
+				Token:               hashedUser,
+				AllowedCertificates: []string{"cert-ok", "cert-warning", "cert-missing-key", "cert-unissued"},
+				AllowedTeams:        []string{"team-user"},
+			},
+		},
+		Certificates: []config.CertConfig{
+			{
+				ID:      "cert-ok",
+				Primary: "ok.example.com",
+				Sans:    []string{"www.ok.example.com"},
+				TeamID:  "team-user",
+			},
+			{
+				ID:      "cert-warning",
+				Primary: "warning.example.com",
+				TeamID:  "team-user",
+			},
+			{
+				ID:      "cert-missing-key",
+				Primary: "missing-key.example.com",
+				TeamID:  "team-user",
+			},
+			{
+				ID:      "cert-unissued",
+				Primary: "unissued.example.com",
+				TeamID:  "team-user",
+			},
+			{
+				ID:      "cert-other",
+				Primary: "other.example.com",
+				TeamID:  "team-other",
+			},
+		},
+	}
+	if err := initialConfig.Save(os.Getenv("CONFIG_PATH")); err != nil {
+		t.Fatalf("Failed to save initial config: %v", err)
+	}
+
+	now := time.Now()
+	createAPITestCertificate(t, tmpDir, "cert-ok", "ok.example.com", []string{"www.ok.example.com"}, now.Add(-time.Hour), now.Add(90*24*time.Hour), true)
+	createAPITestCertificate(t, tmpDir, "cert-warning", "warning.example.com", nil, now.Add(-time.Hour), now.Add(10*24*time.Hour), true)
+	createAPITestCertificate(t, tmpDir, "cert-missing-key", "missing-key.example.com", nil, now.Add(-time.Hour), now.Add(90*24*time.Hour), false)
+	createAPITestCertificate(t, tmpDir, "cert-other", "other.example.com", nil, now.Add(-time.Hour), now.Add(90*24*time.Hour), true)
+
+	cfg := config.MustLoad()
+	server := NewServer(tmpDir, cfg, nil)
+	ts := httptest.NewServer(server.Routes())
+	defer ts.Close()
+
+	t.Run("List status is scoped and does not include PEM material", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/status", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("Expected 200 OK, got %d", res.StatusCode)
+		}
+
+		var raw bytes.Buffer
+		if _, err := raw.ReadFrom(res.Body); err != nil {
+			t.Fatalf("Failed to read response: %v", err)
+		}
+		body := raw.String()
+		if strings.Contains(body, "BEGIN CERTIFICATE") || strings.Contains(body, "BEGIN EC PRIVATE KEY") {
+			t.Fatalf("Status response leaked PEM material: %s", body)
+		}
+
+		var statuses []CertificateStatusResponse
+		if err := json.Unmarshal([]byte(body), &statuses); err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+		if len(statuses) != 4 {
+			t.Fatalf("Expected 4 scoped certificate statuses, got %d", len(statuses))
+		}
+
+		byID := map[string]CertificateStatusResponse{}
+		for _, status := range statuses {
+			byID[status.ID] = status
+		}
+		if _, ok := byID["cert-other"]; ok {
+			t.Fatal("Unscoped certificate status was returned")
+		}
+		if byID["cert-ok"].Status != "ok" || !byID["cert-ok"].Issued || byID["cert-ok"].DaysRemaining == nil {
+			t.Errorf("Expected cert-ok to be issued and ok, got %+v", byID["cert-ok"])
+		}
+		if byID["cert-warning"].Status != "warning" {
+			t.Errorf("Expected cert-warning to be warning, got %+v", byID["cert-warning"])
+		}
+		if byID["cert-missing-key"].Status != "critical" || byID["cert-missing-key"].Issued {
+			t.Errorf("Expected cert-missing-key to be critical and unissued, got %+v", byID["cert-missing-key"])
+		}
+		if byID["cert-unissued"].Status != "critical" || byID["cert-unissued"].Reason == "" {
+			t.Errorf("Expected cert-unissued to be critical with reason, got %+v", byID["cert-unissued"])
+		}
+	})
+
+	t.Run("Single status by identifier", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/ok.example.com/status", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("Expected 200 OK, got %d", res.StatusCode)
+		}
+
+		var status CertificateStatusResponse
+		if err := json.NewDecoder(res.Body).Decode(&status); err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+		if status.ID != "cert-ok" || status.Status != "ok" || status.IssuerCommonName == "" {
+			t.Errorf("Unexpected single status response: %+v", status)
+		}
+	})
+
+	t.Run("Admin can fetch metadata status", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/cert-ok/status", nil)
+		req.Header.Set("Authorization", "Bearer admin-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("Expected 200 OK, got %d", res.StatusCode)
+		}
+	})
+
+	t.Run("Single status respects scoping", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/cert-other/status", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusForbidden {
+			t.Fatalf("Expected 403 Forbidden, got %d", res.StatusCode)
+		}
+	})
+}
+
 func TestRawCertificateEndpoints(t *testing.T) {
 	tmpDir, cleanup := setupTestEnv(t, "api-raw-cert-tests-*")
 	defer cleanup()
@@ -966,5 +1205,3 @@ func TestRawCertificateEndpoints(t *testing.T) {
 		}
 	})
 }
-
-

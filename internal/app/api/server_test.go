@@ -59,8 +59,8 @@ func TestAuthentication_Roles(t *testing.T) {
 			Admin:               false,
 		},
 		{
-			Token:          hashedAdminToken,
-			Admin:          true,
+			Token: hashedAdminToken,
+			Admin: true,
 		},
 	}
 
@@ -109,6 +109,20 @@ func TestAuthentication_Roles(t *testing.T) {
 			path:           "/api/v1/certificates",
 			method:         "GET",
 			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Admin token accessing cert status - Allowed",
+			token:          "admin-token",
+			path:           "/api/v1/certificates/cert1/status",
+			method:         "GET",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Admin token accessing private key - Forbidden",
+			token:          "admin-token",
+			path:           "/api/v1/certificates/cert1/private-key",
+			method:         "GET",
+			expectedStatus: http.StatusForbidden,
 		},
 		{
 			name:           "No token accessing config - Unauthorized",

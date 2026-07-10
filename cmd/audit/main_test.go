@@ -24,7 +24,7 @@ func TestFormatMarkdown(t *testing.T) {
 		APIKeys: []config.APIKeyConfig{
 			{ID: "key-1", Description: "Key 1", AllowedCertificates: []string{"cert-1"}, AllowedTeams: []string{"team-1"}, Admin: false},
 		},
-		IssuedCerts: []api.CertificateResponse{
+		IssuedCerts: []api.CertificateStatusResponse{
 			{ID: "cert-1", Domain: "example.com", Sans: []string{"*.example.com"}, Issued: true},
 		},
 	}
@@ -87,8 +87,8 @@ func TestFetchAuditData(t *testing.T) {
 			_ = json.NewEncoder(w).Encode([]config.CertConfig{{ID: "cert-1", Primary: "example.com"}})
 		case "/api/v1/config/api_keys":
 			_ = json.NewEncoder(w).Encode([]config.APIKeyConfig{{ID: "key-1", Description: "Key 1"}})
-		case "/api/v1/certificates":
-			_ = json.NewEncoder(w).Encode([]api.CertificateResponse{{ID: "cert-1", Domain: "example.com", Issued: true}})
+		case "/api/v1/certificates/status":
+			_ = json.NewEncoder(w).Encode([]api.CertificateStatusResponse{{ID: "cert-1", Domain: "example.com", Issued: true}})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -146,4 +146,3 @@ func TestNormalizeURL(t *testing.T) {
 		}
 	}
 }
-
