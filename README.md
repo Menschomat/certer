@@ -310,16 +310,25 @@ Generate an operational report from the Certer API using the built-in audit CLI.
 AUDIT_TOKEN=your-admin-token /audit -url http://localhost:8080 -format html -output certer-report.html
 ```
 
+To preview the HTML layout without a running Certer API or token, render the embedded sample data:
+
+```bash
+go run ./cmd/audit -sample -format html -output /tmp/certer-report.html
+```
+
 Supported formats are:
 - `text`: Markdown report printed to stdout
 - `json`: Raw audit data as formatted JSON
 - `html`: Standalone static dashboard with embedded CSS
+
+The HTML source template lives at `cmd/audit/templates/report.html` and is embedded into the audit binary at build time.
 
 The same options can be provided with environment variables:
 - `AUDIT_TOKEN`
 - `AUDIT_URL`
 - `AUDIT_FORMAT`
 - `AUDIT_OUTPUT`
+- `AUDIT_SAMPLE`
 
 ---
 

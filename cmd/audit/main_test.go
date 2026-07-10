@@ -249,6 +249,51 @@ func TestRunAuditHTMLFormatFromEnv(t *testing.T) {
 	}
 }
 
+func TestRunAuditSampleHTMLDoesNotRequireToken(t *testing.T) {
+	outputPath := filepath.Join(t.TempDir(), "sample-report.html")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runAudit([]string{
+		"-sample",
+		"-format", "html",
+		"-output", outputPath,
+	}, &stdout, &stderr, emptyEnv)
+
+	if code != 0 {
+		t.Fatalf("Expected exit code 0, got %d; stderr=%s", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("Expected stdout to stay empty when -output is used, got %q", stdout.String())
+	}
+
+	reportBytes, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("Expected sample output file to be written: %v", err)
+	}
+	report := string(reportBytes)
+	for _, want := range []string{"Certer System Report", "app.example.com", "payments.example.com", "status-warning", "status-critical"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("Expected sample report to contain %q, got %s", want, report)
+		}
+	}
+}
+
+func TestRunAuditSampleFromEnv(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runAudit([]string{
+		"-format", "html",
+	}, &stdout, &stderr, mapEnv(map[string]string{"AUDIT_SAMPLE": "true"}))
+
+	if code != 0 {
+		t.Fatalf("Expected exit code 0, got %d; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "app.example.com") {
+		t.Fatalf("Expected stdout to contain sample HTML report, got %q", stdout.String())
+	}
+}
+
 func TestRunAuditRejectsUnknownFormat(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

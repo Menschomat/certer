@@ -15,6 +15,7 @@ type auditOptions struct {
 	URL        string
 	Format     string
 	OutputPath string
+	Sample     bool
 }
 
 func runAudit(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -26,7 +27,7 @@ func runAudit(args []string, stdout, stderr io.Writer, getenv func(string) strin
 		return 2
 	}
 
-	if opts.Token == "" {
+	if opts.Token == "" && !opts.Sample {
 		fmt.Fprintln(stderr, "Error: Admin API token is required. Use -token flag or AUDIT_TOKEN environment variable.")
 		return 1
 	}
@@ -37,13 +38,19 @@ func runAudit(args []string, stdout, stderr io.Writer, getenv func(string) strin
 
 	opts.URL = normalizeURL(opts.URL)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
+	var data *AuditData
+	if opts.Sample {
+		data = sampleAuditData()
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
 
-	data, err := fetchAuditData(ctx, &http.Client{}, opts.URL, opts.Token)
-	if err != nil {
-		fmt.Fprintf(stderr, "Error fetching audit data: %v\n", err)
-		return 1
+		var err error
+		data, err = fetchAuditData(ctx, &http.Client{}, opts.URL, opts.Token)
+		if err != nil {
+			fmt.Fprintf(stderr, "Error fetching audit data: %v\n", err)
+			return 1
+		}
 	}
 
 	output, err := renderAuditReport(data, opts.Format, ReportMeta{
@@ -75,6 +82,7 @@ func parseAuditOptions(args []string, stderr io.Writer, getenv func(string) stri
 	urlFlag := fs.String("url", "http://localhost:8080", "Target certer API URL (falls back to AUDIT_URL env var)")
 	formatFlag := fs.String("format", "text", "Output report format: text (Markdown), json, html (falls back to AUDIT_FORMAT env var)")
 	outputFlag := fs.String("output", "", "Write report to file path (falls back to AUDIT_OUTPUT env var)")
+	sampleFlag := fs.Bool("sample", false, "Render with built-in sample data without connecting to the Certer API")
 
 	if err := fs.Parse(args); err != nil {
 		return auditOptions{}, err
@@ -85,6 +93,7 @@ func parseAuditOptions(args []string, stderr io.Writer, getenv func(string) stri
 		URL:        *urlFlag,
 		Format:     *formatFlag,
 		OutputPath: firstNonEmpty(*outputFlag, getenv("AUDIT_OUTPUT")),
+		Sample:     *sampleFlag || truthyEnv(getenv("AUDIT_SAMPLE")),
 	}
 
 	if opts.URL == "" || opts.URL == "http://localhost:8080" {
@@ -95,6 +104,15 @@ func parseAuditOptions(args []string, stderr io.Writer, getenv func(string) stri
 	}
 
 	return opts, nil
+}
+
+func truthyEnv(value string) bool {
+	switch value {
+	case "1", "t", "T", "true", "TRUE", "True", "yes", "YES", "Yes", "y", "Y", "on", "ON", "On":
+		return true
+	default:
+		return false
+	}
 }
 
 func firstNonEmpty(values ...string) string {

@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Certer System Report</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d9e0ea;
+      --ok: #0f766e;
+      --ok-bg: #dff7ef;
+      --warning: #a15c07;
+      --warning-bg: #fff2cc;
+      --critical: #b42318;
+      --critical-bg: #ffe4e0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+    main {
+      width: min(1320px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 48px;
+    }
+    header {
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 32px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+    .meta {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .metric, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .metric {
+      padding: 14px 16px;
+    }
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .metric .value {
+      margin-top: 6px;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    section {
+      margin-top: 16px;
+      overflow: hidden;
+    }
+    .section-head {
+      padding: 18px 20px 10px;
+    }
+    .table-wrap {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .cert-table {
+      table-layout: fixed;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-top: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      background: #f9fbfd;
+    }
+    td.wrap {
+      white-space: normal;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    td.date {
+      font-size: 12px;
+      white-space: normal;
+      min-width: 118px;
+    }
+    .secondary {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .status {
+      display: inline-block;
+      min-width: 72px;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .status-ok { color: var(--ok); background: var(--ok-bg); }
+    .status-warning { color: var(--warning); background: var(--warning-bg); }
+    .status-critical { color: var(--critical); background: var(--critical-bg); }
+    footer {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 1024px) {
+      main {
+        width: min(100% - 24px, 680px);
+        padding-top: 24px;
+      }
+      h1 {
+        font-size: 28px;
+      }
+      .meta {
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 18px;
+      }
+      .metric {
+        min-height: 0;
+        padding: 10px 12px;
+      }
+      .metric .label {
+        font-size: 10px;
+      }
+      .metric .value {
+        margin-top: 2px;
+        font-size: 23px;
+      }
+      .table-wrap {
+        overflow-x: visible;
+      }
+      table, thead, tbody, tr, th, td {
+        display: block;
+      }
+      thead {
+        display: none;
+      }
+      tr {
+        border-top: 1px solid var(--line);
+        padding: 10px 12px;
+      }
+      td {
+        display: grid;
+        grid-template-columns: 118px minmax(0, 1fr);
+        gap: 12px;
+        border-top: 0;
+        padding: 6px 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      td::before {
+        content: attr(data-label);
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+      }
+      td.wrap,
+      td.date {
+        min-width: 0;
+      }
+    }
+    @media (max-width: 430px) {
+      td {
+        grid-template-columns: 116px minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Certer System Report</h1>
+      <div class="meta">Target: {{.TargetURL}} &middot; Generated: {{.GeneratedAt}} &middot; generated by certer audit</div>
+    </header>
+
+    <div class="summary" aria-label="Summary">
+      <div class="metric"><div class="label">Total Certificates</div><div class="value">{{.Summary.TotalCertificates}}</div></div>
+      <div class="metric"><div class="label">OK</div><div class="value">{{.Summary.OK}}</div></div>
+      <div class="metric"><div class="label">Warning</div><div class="value">{{.Summary.Warning}}</div></div>
+      <div class="metric"><div class="label">Critical</div><div class="value">{{.Summary.Critical}}</div></div>
+      <div class="metric"><div class="label">Unissued</div><div class="value">{{.Summary.Unissued}}</div></div>
+      <div class="metric"><div class="label">Teams</div><div class="value">{{.Summary.Teams}}</div></div>
+      <div class="metric"><div class="label">API Keys</div><div class="value">{{.Summary.APIKeys}}</div></div>
+    </div>
+
+    <section>
+      <div class="section-head"><h2>Certificates</h2></div>
+      <div class="table-wrap">
+        <table class="cert-table">
+          <colgroup>
+            <col style="width: 7%">
+            <col style="width: 14%">
+            <col style="width: 15%">
+            <col style="width: 8%">
+            <col style="width: 9%">
+            <col style="width: 5%">
+            <col style="width: 12%">
+            <col style="width: 14%">
+            <col style="width: 16%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Primary Domain</th>
+              <th>SANs</th>
+              <th>Team</th>
+              <th>DNS Provider</th>
+              <th>Issued</th>
+              <th>Expiry</th>
+              <th>Reason</th>
+              <th>Description / ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Certificates}}
+            <tr>
+              <td data-label="Status"><span class="status status-{{.Status}}">{{.StatusLabel}}</span></td>
+              <td data-label="Primary Domain">{{.Primary}}</td>
+              <td data-label="SANs" class="wrap">{{.Sans}}</td>
+              <td data-label="Team"><code>{{.TeamID}}</code></td>
+              <td data-label="DNS Provider">{{.DNSProvider}}</td>
+              <td data-label="Issued">{{.Issued}}</td>
+              <td data-label="Expiry" class="date">{{.ExpiresAt}}<span class="secondary">{{.DaysRemaining}}</span></td>
+              <td data-label="Reason" class="wrap">{{.Reason}}</td>
+              <td data-label="Description / ID" class="wrap">{{.Description}}<code class="secondary">{{.ID}}</code></td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head"><h2>Teams</h2></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>ID</th><th>Description</th></tr></thead>
+          <tbody>
+            {{range .Teams}}
+            <tr><td data-label="Name">{{.Name}}</td><td data-label="ID"><code>{{.ID}}</code></td><td data-label="Description" class="wrap">{{.Description}}</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head"><h2>API Keys</h2></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Description</th><th>Admin</th><th>Scoped Teams</th><th>Scoped Certificates</th><th>ID</th></tr></thead>
+          <tbody>
+            {{range .APIKeys}}
+            <tr>
+              <td data-label="Description" class="wrap">{{.Description}}</td>
+              <td data-label="Admin">{{.Admin}}</td>
+              <td data-label="Scoped Teams" class="wrap">{{.AllowedTeams}}</td>
+              <td data-label="Scoped Certificates" class="wrap">{{.AllowedCertificates}}</td>
+              <td data-label="ID"><code>{{.ID}}</code></td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>Static report generated by certer audit.</footer>
+  </main>
+</body>
+</html>
