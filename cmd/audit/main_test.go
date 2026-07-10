@@ -98,6 +98,8 @@ func TestFormatHTML(t *testing.T) {
 		"Certificates",
 		"Teams",
 		"API Keys",
+		"prefers-color-scheme: dark",
+		"--panel: #1f2937",
 		"Total Certificates",
 		">4<",
 		"status-ok",
