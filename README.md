@@ -295,10 +295,10 @@ Hash custom tokens or generate secure random credentials using the built-in CLI 
 Since the keygen utility is compiled and copied into the Docker image, you can invoke it by overriding the container entrypoint:
 ```bash
 # Generate random secure token and its Argon2id hash
-docker run --rm -it --entrypoint /keygen certer
+docker run --rm -it --entrypoint /keygen ghcr.io/menschomat/certer:latest
 
 # Generate Argon2id hash for a custom token
-docker run --rm -it --entrypoint /keygen certer -token mysecret
+docker run --rm -it --entrypoint /keygen ghcr.io/menschomat/certer:latest -token mysecret
 ```
 
 ---
@@ -338,7 +338,7 @@ When `-output` or `AUDIT_OUTPUT` is set, the complete report is written to that 
 
 The REST API enforces a strict separation of duties based on token type:
 - **Fetch Tokens (`admin = false`)**: Allowed to retrieve certificates via the read-only certificate endpoints. Forbidden from accessing configuration APIs.
-- **Admin Tokens (`admin = true`)**: Allowed to manage configurations via `/api/v1/config/*` endpoints. Forbidden from reading actual certificate private keys.
+- **Admin Tokens (`admin = true`)**: Allowed to manage configurations via `/api/v1/config/*` endpoints, list certificate configurations, and read certificate status metadata. Forbidden from downloading raw certificate or private key PEM files.
 
 All API requests (except `/health` and `/api/v1/hello`) must include the authentication token, typically passed as a `Bearer` token in the `Authorization` header:
 ```http
@@ -364,7 +364,7 @@ Retrieve a greetings message.
 - **Auth**: None
 - **Response**:
   ```json
-  {"message": "Hello from Certer!"}
+  {"message": "Hello, World!"}
   ```
 
 ---
@@ -394,7 +394,7 @@ Directly download the raw PEM encoded block as plain text (no JSON).
 - **Endpoints**:
   - `GET /api/v1/certificates/{identifier}/certificate`
   - `GET /api/v1/certificates/{identifier}/private-key`
-- **Auth**: Bearer Token (Fetch Token, `admin = false` or Admin Token)
+- **Auth**: Bearer Token (Fetch Token, `admin = false`)
 - **Path Parameter**: `{identifier}` can be the Certificate UUID or a domain name (matches primary or SAN wildcard).
 - **Example request with curl**:
   ```bash
@@ -484,7 +484,7 @@ Updates an existing configuration by ID.
 - **Response**: Status `200 OK`
 
 #### 4.4 Delete Configuration
-Deletes certificate configuration and schedules cleanup of certificates on disk.
+Deletes the certificate configuration from the dynamic state. Existing generated PEM files on disk are kept intact.
 - **Endpoint**: `DELETE /api/v1/config/certificates/{id}`
 - **Response**: Status `204 No Content`
 
@@ -642,5 +642,5 @@ docker run -d \
   -v $(pwd)/config.json:/config.json \
   -v $(pwd)/certs:/certs \
   -e CF_DNS_API_TOKEN="your_token" \
-  certer
+  ghcr.io/menschomat/certer:latest
 ```
