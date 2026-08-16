@@ -112,21 +112,10 @@ func (s *Server) handleGetCertificateStatus(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	s.mu.RLock()
-	allCerts := s.cfg.AllCertificates()
-	s.mu.RUnlock()
-
-	cc := s.findCertificateByIdentifier(identifier, allCerts)
+	accessibleCerts := s.accessibleCertificates(r)
+	cc := s.findCertificateByIdentifier(identifier, accessibleCerts)
 	if cc == nil {
 		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
-		return
-	}
-
-	allowedCertificates := allowedCertificatesFromContext(r.Context())
-	allowedTeams := allowedTeamsFromContext(r.Context())
-	isAdmin := isAdminFromContext(r.Context())
-	if allowed, msg := checkCertAccess(isAdmin, cc.ID, cc.TeamID, allowedCertificates, allowedTeams); !allowed {
-		respondWithError(w, http.StatusForbidden, msg)
 		return
 	}
 
@@ -379,23 +368,10 @@ func (s *Server) handleGetRawFile(w http.ResponseWriter, r *http.Request, getPri
 		return
 	}
 
-	allowedCertificates := allowedCertificatesFromContext(r.Context())
-	allowedTeams := allowedTeamsFromContext(r.Context())
-	isAdmin := isAdminFromContext(r.Context())
-
-	s.mu.RLock()
-	allCerts := s.cfg.AllCertificates()
-	s.mu.RUnlock()
-
-	cc := s.findCertificateByIdentifier(identifier, allCerts)
+	accessibleCerts := s.accessibleCertificates(r)
+	cc := s.findCertificateByIdentifier(identifier, accessibleCerts)
 	if cc == nil {
 		respondWithError(w, http.StatusNotFound, "certificate configuration not found")
-		return
-	}
-
-	// Scoping / Authorization check
-	if allowed, msg := checkCertAccess(isAdmin, cc.ID, cc.TeamID, allowedCertificates, allowedTeams); !allowed {
-		respondWithError(w, http.StatusForbidden, msg)
 		return
 	}
 

@@ -870,7 +870,7 @@ func TestCertificateStatusEndpoints(t *testing.T) {
 			{
 				ID:                  "key-user",
 				Token:               hashedUser,
-				AllowedCertificates: []string{"cert-ok", "cert-warning", "cert-missing-key", "cert-unissued"},
+				AllowedCertificates: []string{"cert-ok", "cert-warning", "cert-missing-key", "cert-unissued", "cert-user-overlap"},
 				AllowedTeams:        []string{"team-user"},
 			},
 		},
@@ -897,6 +897,16 @@ func TestCertificateStatusEndpoints(t *testing.T) {
 				TeamID:  "team-user",
 			},
 			{
+				ID:      "cert-user-overlap",
+				Primary: "overlap.example.com",
+				TeamID:  "team-user",
+			},
+			{
+				ID:      "z-cert-other-overlap",
+				Primary: "overlap.example.com",
+				TeamID:  "team-other",
+			},
+			{
 				ID:      "cert-other",
 				Primary: "other.example.com",
 				TeamID:  "team-other",
@@ -911,6 +921,8 @@ func TestCertificateStatusEndpoints(t *testing.T) {
 	createAPITestCertificate(t, tmpDir, "cert-ok", "ok.example.com", []string{"www.ok.example.com"}, now.Add(-time.Hour), now.Add(90*24*time.Hour), true)
 	createAPITestCertificate(t, tmpDir, "cert-warning", "warning.example.com", nil, now.Add(-time.Hour), now.Add(10*24*time.Hour), true)
 	createAPITestCertificate(t, tmpDir, "cert-missing-key", "missing-key.example.com", nil, now.Add(-time.Hour), now.Add(90*24*time.Hour), false)
+	createAPITestCertificate(t, tmpDir, "cert-user-overlap", "overlap.example.com", nil, now.Add(-time.Hour), now.Add(90*24*time.Hour), true)
+	createAPITestCertificate(t, tmpDir, "z-cert-other-overlap", "overlap.example.com", nil, now.Add(-time.Hour), now.Add(90*24*time.Hour), true)
 	createAPITestCertificate(t, tmpDir, "cert-other", "other.example.com", nil, now.Add(-time.Hour), now.Add(90*24*time.Hour), true)
 
 	cfg := config.MustLoad()
@@ -944,8 +956,8 @@ func TestCertificateStatusEndpoints(t *testing.T) {
 		if err := json.Unmarshal([]byte(body), &statuses); err != nil {
 			t.Fatalf("Decode failed: %v", err)
 		}
-		if len(statuses) != 4 {
-			t.Fatalf("Expected 4 scoped certificate statuses, got %d", len(statuses))
+		if len(statuses) != 5 {
+			t.Fatalf("Expected 5 scoped certificate statuses, got %d", len(statuses))
 		}
 
 		byID := map[string]CertificateStatusResponse{}
@@ -954,6 +966,9 @@ func TestCertificateStatusEndpoints(t *testing.T) {
 		}
 		if _, ok := byID["cert-other"]; ok {
 			t.Fatal("Unscoped certificate status was returned")
+		}
+		if _, ok := byID["z-cert-other-overlap"]; ok {
+			t.Fatal("Unscoped overlapping certificate status was returned")
 		}
 		if byID["cert-ok"].Status != "ok" || !byID["cert-ok"].Issued || byID["cert-ok"].DaysRemaining == nil {
 			t.Errorf("Expected cert-ok to be issued and ok, got %+v", byID["cert-ok"])
@@ -966,6 +981,9 @@ func TestCertificateStatusEndpoints(t *testing.T) {
 		}
 		if byID["cert-unissued"].Status != "critical" || byID["cert-unissued"].Reason == "" {
 			t.Errorf("Expected cert-unissued to be critical with reason, got %+v", byID["cert-unissued"])
+		}
+		if byID["cert-user-overlap"].Status != "ok" || !byID["cert-user-overlap"].Issued {
+			t.Errorf("Expected cert-user-overlap to be ok and issued, got %+v", byID["cert-user-overlap"])
 		}
 	})
 
@@ -988,6 +1006,28 @@ func TestCertificateStatusEndpoints(t *testing.T) {
 		}
 		if status.ID != "cert-ok" || status.Status != "ok" || status.IssuerCommonName == "" {
 			t.Errorf("Unexpected single status response: %+v", status)
+		}
+	})
+
+	t.Run("Single status resolves domain within allowed scope even with overlapping newer certificate", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/overlap.example.com/status", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("Expected 200 OK, got %d", res.StatusCode)
+		}
+
+		var status CertificateStatusResponse
+		if err := json.NewDecoder(res.Body).Decode(&status); err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+		if status.ID != "cert-user-overlap" {
+			t.Errorf("Expected cert-user-overlap to be resolved, got %s", status.ID)
 		}
 	})
 
@@ -1014,8 +1054,8 @@ func TestCertificateStatusEndpoints(t *testing.T) {
 		}
 		defer res.Body.Close()
 
-		if res.StatusCode != http.StatusForbidden {
-			t.Fatalf("Expected 403 Forbidden, got %d", res.StatusCode)
+		if res.StatusCode != http.StatusNotFound {
+			t.Fatalf("Expected 404 Not Found, got %d", res.StatusCode)
 		}
 	})
 }
@@ -1043,7 +1083,7 @@ func TestRawCertificateEndpoints(t *testing.T) {
 			{
 				ID:                  "key-user",
 				Token:               hashedUser,
-				AllowedCertificates: []string{"cert-active", "cert-unissued"},
+				AllowedCertificates: []string{"cert-active", "cert-unissued", "a-cert-overlap"},
 				AllowedTeams:        []string{"team-user"},
 			},
 		},
@@ -1058,6 +1098,16 @@ func TestRawCertificateEndpoints(t *testing.T) {
 				ID:      "cert-unissued",
 				Primary: "unissued.com",
 				TeamID:  "team-user",
+			},
+			{
+				ID:      "a-cert-overlap",
+				Primary: "overlap.com",
+				TeamID:  "team-user",
+			},
+			{
+				ID:      "z-cert-overlap",
+				Primary: "overlap.com",
+				TeamID:  "team-other",
 			},
 			{
 				ID:      "cert-other",
@@ -1075,6 +1125,22 @@ func TestRawCertificateEndpoints(t *testing.T) {
 		t.Fatalf("Write cert failed: %v", err)
 	}
 	err = os.WriteFile(filepath.Join(tmpDir, "cert-active.key"), []byte("PEM-KEY-ACTIVE"), 0644)
+	if err != nil {
+		t.Fatalf("Write key failed: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(tmpDir, "a-cert-overlap.crt"), []byte("PEM-CERT-OVERLAP-USER"), 0644)
+	if err != nil {
+		t.Fatalf("Write cert failed: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(tmpDir, "a-cert-overlap.key"), []byte("PEM-KEY-OVERLAP-USER"), 0644)
+	if err != nil {
+		t.Fatalf("Write key failed: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(tmpDir, "z-cert-overlap.crt"), []byte("PEM-CERT-OVERLAP-OTHER"), 0644)
+	if err != nil {
+		t.Fatalf("Write cert failed: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(tmpDir, "z-cert-overlap.key"), []byte("PEM-KEY-OVERLAP-OTHER"), 0644)
 	if err != nil {
 		t.Fatalf("Write key failed: %v", err)
 	}
@@ -1144,6 +1210,44 @@ func TestRawCertificateEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("Get certificate by domain - Resolves allowed certificate when unallowed cert matches same domain with newer ID", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/overlap.com/certificate", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("Expected 200 OK, got %d", res.StatusCode)
+		}
+		var body bytes.Buffer
+		body.ReadFrom(res.Body)
+		if body.String() != "PEM-CERT-OVERLAP-USER" {
+			t.Errorf("Expected PEM-CERT-OVERLAP-USER, got %q", body.String())
+		}
+	})
+
+	t.Run("Get private key by domain - Resolves allowed certificate when unallowed cert matches same domain with newer ID", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/overlap.com/private-key", nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("Expected 200 OK, got %d", res.StatusCode)
+		}
+		var body bytes.Buffer
+		body.ReadFrom(res.Body)
+		if body.String() != "PEM-KEY-OVERLAP-USER" {
+			t.Errorf("Expected PEM-KEY-OVERLAP-USER, got %q", body.String())
+		}
+	})
+
 	t.Run("Get certificate by SAN wildcard domain - Success", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/sub.active.com/certificate", nil)
 		req.Header.Set("Authorization", "Bearer user-token")
@@ -1163,7 +1267,7 @@ func TestRawCertificateEndpoints(t *testing.T) {
 		}
 	})
 
-	t.Run("Get certificate by identifier - Scoping Forbidden", func(t *testing.T) {
+	t.Run("Get certificate by identifier - Scoping Inaccessible Not Found", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certificates/cert-other/certificate", nil)
 		req.Header.Set("Authorization", "Bearer user-token")
 		res, err := http.DefaultClient.Do(req)
@@ -1172,8 +1276,8 @@ func TestRawCertificateEndpoints(t *testing.T) {
 		}
 		defer res.Body.Close()
 
-		if res.StatusCode != http.StatusForbidden {
-			t.Errorf("Expected 403 Forbidden, got %d", res.StatusCode)
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("Expected 404 Not Found, got %d", res.StatusCode)
 		}
 	})
 
