@@ -3,7 +3,7 @@ module certer
 go 1.26.4
 
 require (
-	github.com/go-acme/lego/v5 v5.3.1
+	github.com/go-acme/lego/v5 v5.4.0
 	github.com/google/uuid v1.6.0
 	golang.org/x/crypto v0.55.0
 )
