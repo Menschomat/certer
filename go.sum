@@ -1049,6 +1049,8 @@ github.com/go-acme/lego/v5 v5.4.1 h1:Jt6xAP9xQrJ3SLLGgxejfDDd3pzdrmuLCWe4oTqHHQc
 github.com/go-acme/lego/v5 v5.4.1/go.mod h1:OvMMHc6DVeqycOGhNRuMlNa1V304qEFRljWDHMpEcLc=
 github.com/go-acme/lego/v5 v5.5.1 h1:khJjS+gt8Cm3dsgwJkmgMKw3QON8ZaeocWyoyFwd4+k=
 github.com/go-acme/lego/v5 v5.5.1/go.mod h1:KInryfu4L/i8noHCThw8vdyR6zD7KMKxC6npIWwrMFQ=
+github.com/go-acme/lego/v5 v5.5.2 h1:SJ5cMZDoyg5hB6tYpZoFcwgzkJVJI1yu5f0N8gAEeVs=
+github.com/go-acme/lego/v5 v5.5.2/go.mod h1:d6S2VCJAVcPBSGAy+diFoCZbvfWo80tt0ZPSXDiq6PM=
 github.com/go-acme/tencentclouddnspod v1.3.24 h1:uCSiOW1EJttcnOON+MVVyVDJguFL/Q4NIGkq1CrT9p8=
 github.com/go-acme/tencentclouddnspod v1.3.24/go.mod h1:RKcB2wSoZncjBA0OEFj59s1ko1XDy+ZsAtk+9uMxUF0=
 github.com/go-acme/tencentclouddnspod v1.3.131 h1:0Bd/OKGdf29c8w7CHwmZVmy+n/XEtOOv4AFhLXzm6Fw=
